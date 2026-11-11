@@ -1,7 +1,7 @@
 """Widget that renders application backgrounds in stretched or cover mode."""
 
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QPaintEvent, QPainter, QPixmap, QResizeEvent
+from PySide6.QtGui import QPainter, QPaintEvent, QPixmap, QResizeEvent
 from PySide6.QtWidgets import QWidget
 
 

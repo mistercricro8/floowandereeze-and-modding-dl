@@ -4,9 +4,9 @@ This module provides functions for UI-related tasks like showing toasts
 and managing the application's color palette.
 """
 
-from PySide6.QtGui import QPalette, QColor
-from PySide6.QtCore import Qt
 from pyqttoast import Toast, ToastPreset
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QColor, QPalette
 
 
 def show_toast(parent, title: str, text: str, preset: ToastPreset):

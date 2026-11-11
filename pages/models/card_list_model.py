@@ -1,8 +1,8 @@
 from textwrap import shorten
 from threading import Thread
+from typing import override
 
 from PySide6.QtGui import Qt
-from typing_extensions import override
 from sqlalchemy import or_
 
 from database.models import CardModel
@@ -13,7 +13,6 @@ from util.enums import CardArtCoordinates
 
 
 class CardListModel(AssetListModel):
-
     def __init__(self, cards=None):
         super().__init__(cards or [], CardModel)
         self.filter = ""
@@ -26,7 +25,6 @@ class CardListModel(AssetListModel):
 
         if self.filter != "" and not self.show_favorites:
             if self.search_description:
-                # Search both name and description
                 query = query.filter(
                     or_(
                         self.db_model.name.contains(self.filter),
@@ -34,11 +32,10 @@ class CardListModel(AssetListModel):
                     )
                 )
             else:
-                # Search only name
                 query = query.filter(self.db_model.name.contains(self.filter))
 
         if self.show_favorites:
-            query = query.filter(self.db_model.favorite == True)
+            query = query.filter(self.db_model.favorite.is_(True))
 
         self.assets = query.order_by(self.db_model.name).all()
 

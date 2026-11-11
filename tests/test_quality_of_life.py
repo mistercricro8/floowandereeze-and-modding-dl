@@ -1,12 +1,12 @@
 """Regression checks using an isolated database and offscreen Qt widgets."""
 
 import os
-from contextlib import closing
-from pathlib import Path
 import sqlite3
 import tempfile
 import unittest
-from unittest.mock import patch, MagicMock
+from contextlib import closing
+from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 _WORKSPACE = Path.cwd()
@@ -14,7 +14,6 @@ _TEMP = tempfile.TemporaryDirectory()
 os.chdir(_TEMP.name)
 
 from PySide6 import QtCore, QtGui, QtWidgets
-from sqlalchemy import create_engine
 
 _APP = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
 QtCore.QSettings.setDefaultFormat(QtCore.QSettings.Format.IniFormat)
@@ -22,20 +21,25 @@ QtCore.QSettings.setPath(
     QtCore.QSettings.Format.IniFormat, QtCore.QSettings.Scope.UserScope, _TEMP.name
 )
 
-from database.models import SleeveModel, FieldModel, CharacterModel, CharacterAssetLayout
-from database.objects import session, engine
 from database.migrations import run_migrations
-from util.constants import APP_CONFIG
-from util import game_discovery
-from services import update_service
-from pages.models.sleeve_list_model import SleeveListModel
-from pages.models.field_list_model import FieldListModel
-from pages.models.character_list_model import CharacterListModel
-from pages.character import Character
-from pages.sleeve import Sleeve
-from pages.field import Field
+from database.models import (
+    CharacterAssetLayout,
+    CharacterModel,
+    FieldModel,
+    SleeveModel,
+)
+from database.objects import engine, session
 from pages.card import Card
+from pages.character import Character
+from pages.field import Field
 from pages.main_window import MainWindow
+from pages.models.character_list_model import CharacterListModel
+from pages.models.field_list_model import FieldListModel
+from pages.models.sleeve_list_model import SleeveListModel
+from pages.sleeve import Sleeve
+from services import update_service
+from util import game_discovery
+from util.constants import APP_CONFIG
 
 
 def tearDownModule():
@@ -154,7 +158,6 @@ class QualityOfLifeTests(unittest.TestCase):
             )
             toast.assert_called_once()
 
-            # Keyboard navigation must update the checkbox without saving anything.
             page.charactersView.setFocus()
             QTest.keyClick(page.charactersView, QtCore.Qt.Key.Key_Right)
             self.assertEqual(page.selected.konami_id, 2)
@@ -171,7 +174,9 @@ class QualityOfLifeTests(unittest.TestCase):
             )
 
     def test_character_unfavorite_refreshes_filter_and_clears_target(self):
-        session.add(CharacterModel(konami_id=1, name="Yugi", series="DM", favorite=True))
+        session.add(
+            CharacterModel(konami_id=1, name="Yugi", series="DM", favorite=True)
+        )
         session.commit()
         page = Character()
         self.addCleanup(page.close)
@@ -215,7 +220,8 @@ class QualityOfLifeTests(unittest.TestCase):
                 connection.execute("SELECT version FROM app_config").fetchone()[0]
             )
             repository, branch, last_source = connection.execute(
-                "SELECT metadata_repository, metadata_branch, metadata_last_source FROM app_config"
+                "SELECT metadata_repository, metadata_branch, "
+                "metadata_last_source FROM app_config"
             ).fetchone()
             self.assertEqual(repository, "Nauder/floowandereeze-and-modding-etl-dl")
             self.assertEqual(branch, "")
@@ -360,12 +366,16 @@ class QualityOfLifeTests(unittest.TestCase):
                 painter.end()
                 thumb.return_value = QtGui.QIcon(asset)
                 item = QtWidgets.QListWidgetItem()
-                item.setData(QtCore.Qt.ItemDataRole.UserRole, (CharaAssetType.ICON, "test"))
+                item.setData(
+                    QtCore.Qt.ItemDataRole.UserRole, (CharaAssetType.ICON, "test")
+                )
                 dialog._on_asset_selected(item)
 
             def assert_crop_ratio(ratio):
                 left, top, right, bottom = dialog.service.crop_rect
-                self.assertAlmostEqual((right - left) * 600 / ((bottom - top) * 400), ratio)
+                self.assertAlmostEqual(
+                    (right - left) * 600 / ((bottom - top) * 400), ratio
+                )
 
             select_asset(100, 200)
             dialog._crop_btn.click()
@@ -378,12 +388,13 @@ class QualityOfLifeTests(unittest.TestCase):
             self.assertIsNone(dialog.service.crop_rect)
             dialog._crop_btn.click()
             assert_crop_ratio(3)
-            # Unequal transparent margins must not contribute to the crop ratio.
             select_asset(300, 200, QtCore.QRect(30, 15, 100, 160))
             assert_crop_ratio(100 / 160)
             thumb.side_effect = ValueError("Missing asset")
             item = QtWidgets.QListWidgetItem()
-            item.setData(QtCore.Qt.ItemDataRole.UserRole, (CharaAssetType.ICON, "missing"))
+            item.setData(
+                QtCore.Qt.ItemDataRole.UserRole, (CharaAssetType.ICON, "missing")
+            )
             dialog._on_asset_selected(item)
             self.assertFalse(dialog._crop_btn.isEnabled())
             self.assertIsNone(dialog.service.crop_rect)
@@ -396,8 +407,13 @@ class QualityOfLifeTests(unittest.TestCase):
         source.fill(QtCore.Qt.GlobalColor.red)
         source.save(str(image))
         self.addCleanup(image.unlink)
-        character = CharacterModel(series="DM", icon="icon", select="select", world="world")
-        with patch("dialogs.character_edit_dialog.fetch_bundle_thumb", return_value=QtGui.QIcon(source)):
+        character = CharacterModel(
+            series="DM", icon="icon", select="select", world="world"
+        )
+        with patch(
+            "dialogs.character_edit_dialog.fetch_bundle_thumb",
+            return_value=QtGui.QIcon(source),
+        ):
             dialog = CharacterEditDialog(character)
             self.addCleanup(dialog.close)
             dialog._load_image(str(image))
@@ -413,7 +429,10 @@ class QualityOfLifeTests(unittest.TestCase):
             self.assertEqual(dialog.replace_btn.text(), "Replace 3 Assets")
             self.assertEqual(dialog.service.crop_rect, selected_area)
             self.assertIsNone(crop._target_ratio)
-            dialog.asset_list.setCurrentItem(dialog.asset_list.item(2), QtCore.QItemSelectionModel.SelectionFlag.NoUpdate)
+            dialog.asset_list.setCurrentItem(
+                dialog.asset_list.item(2),
+                QtCore.QItemSelectionModel.SelectionFlag.NoUpdate,
+            )
             self.assertEqual(dialog.service.crop_rect, selected_area)
             applied = []
 
@@ -422,11 +441,15 @@ class QualityOfLifeTests(unittest.TestCase):
                 if dialog.service.bundle == "select":
                     raise OSError("unavailable bundle")
 
-            with patch("dialogs.character_edit_dialog.APP_CONFIG", create_backup=False), patch.object(
-                dialog.service, "replace_bundle", side_effect=replace
-            ), patch("dialogs.character_edit_dialog.QMessageBox.warning") as warning:
+            with (
+                patch("dialogs.character_edit_dialog.APP_CONFIG", create_backup=False),
+                patch.object(dialog.service, "replace_bundle", side_effect=replace),
+                patch("dialogs.character_edit_dialog.QMessageBox.warning") as warning,
+            ):
                 dialog.replace_btn.click()
-            self.assertEqual({bundle for bundle, _ in applied}, {"icon", "select", "world"})
+            self.assertEqual(
+                {bundle for bundle, _ in applied}, {"icon", "select", "world"}
+            )
             self.assertTrue(all(rect == selected_area for _, rect in applied))
             self.assertEqual(dialog.service.bundle, dialog.selected_asset_bundle)
             warning.assert_called_once()
@@ -443,9 +466,9 @@ class QualityOfLifeTests(unittest.TestCase):
 
     def test_shared_character_crop_fits_each_content_ratio_without_stretching(self):
         from PIL import Image, ImageOps
+
         from services.character_service import CharacterService
 
-        # A gradient makes stretching and selecting outside the shared area detectable.
         source = Image.new("RGBA", (240, 160))
         source.putdata([(x, y, 50, 255) for y in range(160) for x in range(240)])
         image = Path("shared-crop-source.png").resolve()
@@ -456,7 +479,10 @@ class QualityOfLifeTests(unittest.TestCase):
         service = CharacterService()
         service.image_path = str(image)
         service.crop_rect = (0.25, 0.125, 0.75, 0.875)
-        for bundle, bounds in (("portrait", (10, 5, 60, 105)), ("landscape", (5, 20, 105, 70))):
+        for bundle, bounds in (
+            ("portrait", (10, 5, 60, 105)),
+            ("landscape", (5, 20, 105, 70)),
+        ):
             with self.subTest(bundle=bundle):
                 original = Image.new("RGBA", (120, 120))
                 original.paste((255, 255, 255, 255), bounds)
@@ -467,20 +493,30 @@ class QualityOfLifeTests(unittest.TestCase):
                 environment = MagicMock(objects=[texture])
                 environment.file.save.return_value = b"bundle"
                 service.bundle = bundle
-                with patch("services.character_service.unity_load", return_value=environment), patch(
-                    "services.character_service.prepare_environment", return_value=str(output)
+                with (
+                    patch(
+                        "services.character_service.unity_load",
+                        return_value=environment,
+                    ),
+                    patch(
+                        "services.character_service.prepare_environment",
+                        return_value=str(output),
+                    ),
                 ):
                     service.replace_bundle()
                 result = data.set_image.call_args.kwargs["img"]
-                expected = ImageOps.fit(source.crop((60, 20, 180, 140)),
-                                        (bounds[2] - bounds[0], bounds[3] - bounds[1]),
-                                        method=Image.Resampling.LANCZOS)
+                expected = ImageOps.fit(
+                    source.crop((60, 20, 180, 140)),
+                    (bounds[2] - bounds[0], bounds[3] - bounds[1]),
+                    method=Image.Resampling.LANCZOS,
+                )
                 self.assertEqual(result.getchannel("A").getbbox(), bounds)
                 self.assertEqual(result.crop(bounds).tobytes(), expected.tobytes())
                 self.assertEqual(service.crop_rect, (0.25, 0.125, 0.75, 0.875))
 
     def test_character_crop_restores_original_transparent_margins(self):
         from PIL import Image
+
         from services.character_service import CharacterService
 
         source = Image.new("RGBA", (200, 100), (10, 20, 30, 128))
@@ -506,8 +542,15 @@ class QualityOfLifeTests(unittest.TestCase):
                 service.bundle = f"padding-{bounds}"
                 service.image_path = str(image)
                 service.crop_rect = (0.25, 0, 1, 1)
-                with patch("services.character_service.unity_load", return_value=environment), patch(
-                    "services.character_service.prepare_environment", return_value=str(output)
+                with (
+                    patch(
+                        "services.character_service.unity_load",
+                        return_value=environment,
+                    ),
+                    patch(
+                        "services.character_service.prepare_environment",
+                        return_value=str(output),
+                    ),
                 ):
                     service.replace_bundle()
                 result = data.set_image.call_args.kwargs["img"]
@@ -518,15 +561,15 @@ class QualityOfLifeTests(unittest.TestCase):
                 for point in ((left, top), (right - 1, bottom - 1)):
                     pixel = result.getpixel(point)
                     self.assertEqual(pixel[3], 128)
-                    # RGBA resampling can round RGB channels by one level.
-                    for actual, expected in zip(pixel[:3], (10, 20, 30)):
+                    for actual, expected in zip(pixel[:3], (10, 20, 30), strict=True):
                         self.assertLessEqual(abs(actual - expected), 1)
 
     def test_character_original_layout_survives_transparent_replacements(self):
         from PIL import Image
         from PIL.ImageQt import ImageQt
-        from services.character_service import CharacterService
+
         from dialogs.character_edit_dialog import CharacterEditDialog
+        from services.character_service import CharacterService
         from util.enums import CharaAssetType
 
         bounds = (20, 5, 80, 85)
@@ -547,9 +590,12 @@ class QualityOfLifeTests(unittest.TestCase):
         environment = MagicMock(objects=[texture])
         environment.file.save.return_value = b"bundle"
         results = []
-        # Each pass uses a new service, as happens when reopening the modal.
-        with patch("services.character_service.unity_load", return_value=environment), patch(
-            "services.character_service.prepare_environment", return_value=str(output)
+        with (
+            patch("services.character_service.unity_load", return_value=environment),
+            patch(
+                "services.character_service.prepare_environment",
+                return_value=str(output),
+            ),
         ):
             for _ in range(3):
                 service = CharacterService()
@@ -559,17 +605,23 @@ class QualityOfLifeTests(unittest.TestCase):
                 service.replace_bundle()
                 data.image = data.set_image.call_args.kwargs["img"]
                 results.append(data.image.tobytes())
-                self.assertEqual(service.original_content_bounds(service.bundle, data.image), bounds)
+                self.assertEqual(
+                    service.original_content_bounds(service.bundle, data.image), bounds
+                )
         self.assertEqual(results[0], results[1])
         self.assertEqual(results[0], results[2])
         self.assertNotEqual(data.image.getchannel("A").getbbox(), bounds)
 
         icon = QtGui.QIcon(QtGui.QPixmap.fromImage(ImageQt(data.image)))
-        with patch("dialogs.character_edit_dialog.fetch_bundle_thumb", return_value=icon):
+        with patch(
+            "dialogs.character_edit_dialog.fetch_bundle_thumb", return_value=icon
+        ):
             dialog = CharacterEditDialog(CharacterModel(series="DM"))
             self.addCleanup(dialog.close)
             item = QtWidgets.QListWidgetItem()
-            item.setData(QtCore.Qt.ItemDataRole.UserRole, (CharaAssetType.ICON, "transparent"))
+            item.setData(
+                QtCore.Qt.ItemDataRole.UserRole, (CharaAssetType.ICON, "transparent")
+            )
             dialog._on_asset_selected(item)
             self.assertAlmostEqual(dialog._asset_ratio, 60 / 80)
 
@@ -584,7 +636,10 @@ class QualityOfLifeTests(unittest.TestCase):
         image = Path("padding-toggle.png").resolve()
         asset.save(str(image))
         self.addCleanup(image.unlink)
-        with patch("dialogs.character_edit_dialog.fetch_bundle_thumb", return_value=QtGui.QIcon(asset)):
+        with patch(
+            "dialogs.character_edit_dialog.fetch_bundle_thumb",
+            return_value=QtGui.QIcon(asset),
+        ):
             dialog = CharacterEditDialog(CharacterModel(series="DM", icon="toggle"))
             self.addCleanup(dialog.close)
             self.assertTrue(dialog.preserve_padding_checkbox.isChecked())
@@ -599,10 +654,13 @@ class QualityOfLifeTests(unittest.TestCase):
                 self.assertAlmostEqual(dialog._asset_ratio, ratio)
                 self.assertAlmostEqual(dialog._crop_widget._target_ratio, ratio)
                 left, top, right, bottom = dialog.service.crop_rect
-                self.assertAlmostEqual((right - left) * 120 / ((bottom - top) * 100), ratio)
+                self.assertAlmostEqual(
+                    (right - left) * 120 / ((bottom - top) * 100), ratio
+                )
 
     def test_character_padding_toggle_controls_saved_margins(self):
         from PIL import Image
+
         from services.character_service import CharacterService
 
         original = Image.new("RGBA", (120, 100))
@@ -624,20 +682,26 @@ class QualityOfLifeTests(unittest.TestCase):
         service.bundle = "toggle-save"
         service.image_path = str(image)
         service.crop_rect = (0, 0, 1, 1)
-        with patch("services.character_service.unity_load", return_value=environment), patch(
-            "services.character_service.prepare_environment", return_value=str(output)
+        with (
+            patch("services.character_service.unity_load", return_value=environment),
+            patch(
+                "services.character_service.prepare_environment",
+                return_value=str(output),
+            ),
         ):
-            # Disabling padding first must still save the original layout.
             for enabled, expected in ((False, (0, 0, 120, 100)), (True, bounds)):
                 service.preserve_transparent_padding = enabled
                 service.replace_bundle()
                 data.image = data.set_image.call_args.kwargs["img"]
                 self.assertEqual(data.image.size, (120, 100))
                 self.assertEqual(data.image.getchannel("A").getbbox(), expected)
-                self.assertEqual(service.original_content_bounds(service.bundle, data.image), bounds)
+                self.assertEqual(
+                    service.original_content_bounds(service.bundle, data.image), bounds
+                )
 
     def test_character_original_layout_uses_existing_backup(self):
         from PIL import Image
+
         from services.character_service import CharacterService
 
         backup = Path("backups/characters/original-layout.png")
@@ -649,10 +713,14 @@ class QualityOfLifeTests(unittest.TestCase):
         original.save(backup)
         replacement = Image.new("RGBA", original.size, (255, 0, 0, 255))
         service = CharacterService()
-        self.assertEqual(service.original_content_bounds("original-layout", replacement), bounds)
-        # The saved layout remains usable when the backup is no longer present.
+        self.assertEqual(
+            service.original_content_bounds("original-layout", replacement), bounds
+        )
         backup.unlink()
-        self.assertEqual(CharacterService().original_content_bounds("original-layout", replacement), bounds)
+        self.assertEqual(
+            CharacterService().original_content_bounds("original-layout", replacement),
+            bounds,
+        )
 
     def test_locked_crop_stays_in_bounds_for_all_corner_drags(self):
         from widgets.crop_overlay_widget import CropOverlayWidget
@@ -672,10 +740,16 @@ class QualityOfLifeTests(unittest.TestCase):
                     crop = widget._crop_rect
                     self.assertAlmostEqual(crop.width() / crop.height(), ratio)
                     self.assertGreater(crop.width(), 0)
-                    self.assertGreaterEqual(crop.left(), widget._image_rect.left() - 1e-9)
+                    self.assertGreaterEqual(
+                        crop.left(), widget._image_rect.left() - 1e-9
+                    )
                     self.assertGreaterEqual(crop.top(), widget._image_rect.top() - 1e-9)
-                    self.assertLessEqual(crop.right(), widget._image_rect.right() + 1e-9)
-                    self.assertLessEqual(crop.bottom(), widget._image_rect.bottom() + 1e-9)
+                    self.assertLessEqual(
+                        crop.right(), widget._image_rect.right() + 1e-9
+                    )
+                    self.assertLessEqual(
+                        crop.bottom(), widget._image_rect.bottom() + 1e-9
+                    )
 
     def test_editor_resizes_searches_and_preserves_crop(self):
         image = Path("source.png")
@@ -704,7 +778,7 @@ class QualityOfLifeTests(unittest.TestCase):
             page.resize(1600, 1000)
             _APP.processEvents()
             self.assertGreater(page.current.width(), small)
-            for a, b in zip(before, crop.get_crop_rect_normalized()):
+            for a, b in zip(before, crop.get_crop_rect_normalized(), strict=True):
                 self.assertAlmostEqual(a, b)
             if cls is not Card:
                 page.searchEdit.setText("missing")
@@ -733,7 +807,12 @@ class QualityOfLifeTests(unittest.TestCase):
         from database.models import CardModel
         from services.backup_service import BackupService, sync_backup_flags
 
-        card = CardModel(name="Card", small_bundle="csmall", medium_bundle="cmedium", large_bundle="clarge")
+        card = CardModel(
+            name="Card",
+            small_bundle="csmall",
+            medium_bundle="cmedium",
+            large_bundle="clarge",
+        )
         sleeve = SleeveModel(small_bundle="ssmall", medium_bundle="smedium")
         field = FieldModel(small_bundle="fsmall", medium_bundle="fmedium")
         character = CharacterModel(konami_id=10, series="DM", duel_31="char31")
@@ -741,16 +820,25 @@ class QualityOfLifeTests(unittest.TestCase):
         session.commit()
         with tempfile.TemporaryDirectory() as folder:
             service = BackupService(folder)
-            names = ["cards/clarge.png", "sleeves/smedium.png", "fields/fmedium.png", "characters/char31.png"]
+            names = [
+                "cards/clarge.png",
+                "sleeves/smedium.png",
+                "fields/fmedium.png",
+                "characters/char31.png",
+            ]
             for name in names:
                 path = service.root / name
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_bytes(b"original")
             sync_backup_flags(service)
-            self.assertTrue(all(asset.has_backup for asset in (card, sleeve, field, character)))
+            self.assertTrue(
+                all(asset.has_backup for asset in (card, sleeve, field, character))
+            )
             service.delete(names)
             sync_backup_flags(service)
-            self.assertFalse(any(asset.has_backup for asset in (card, sleeve, field, character)))
+            self.assertFalse(
+                any(asset.has_backup for asset in (card, sleeve, field, character))
+            )
         session.delete(card)
         session.commit()
 
@@ -792,7 +880,6 @@ class QualityOfLifeTests(unittest.TestCase):
                 "Nauder/floowandereeze-and-modding-etl-dl",
             )
             self.assertEqual(APP_CONFIG.metadata_branch, "")
-        # The discovery control shares the path row and follows the Select button.
         self.assertEqual(
             page.horizontalLayout.indexOf(page.autoDetectGameButton),
             page.horizontalLayout.indexOf(page.gameButton) + 1,
@@ -826,8 +913,11 @@ class QualityOfLifeTests(unittest.TestCase):
 
         root = self._local_metadata_repo()
         page = Config()
-        with patch("pages.config.show_toast"), patch(
-            "pages.config.QFileDialog.getExistingDirectory", return_value=str(root)
+        with (
+            patch("pages.config.show_toast"),
+            patch(
+                "pages.config.QFileDialog.getExistingDirectory", return_value=str(root)
+            ),
         ):
             page.browseMetadataSourceButton.click()
             self.assertFalse(page.metadataBranchLine.isEnabled())
@@ -850,7 +940,6 @@ class QualityOfLifeTests(unittest.TestCase):
                         f"data/{dataset}.parquet"
                     )
                     self.assertEqual(frame.iloc[0]["name"], "Unpublished " + dataset)
-                # Edits are visible immediately, without commits or version changes.
                 (root / "data/version.txt").write_text("2026-10-20", encoding="utf-8")
                 self.assertEqual(
                     update_service.get_github_raw_file("data/version.txt"), "2026-10-20"
@@ -885,6 +974,7 @@ class QualityOfLifeTests(unittest.TestCase):
 
     def test_local_checks_reload_same_date_and_keep_success_marker_on_failure(self):
         from contextlib import ExitStack
+
         from pages.config import Config
         from util.metadata_source import metadata_source_key
 
@@ -941,9 +1031,10 @@ class QualityOfLifeTests(unittest.TestCase):
             self.assertEqual(
                 get.call_args_list[0].kwargs["params"], {"ref": "feature/asset-names"}
             )
-        with patch.object(
-            update_service.requests, "get", return_value=response
-        ) as get, patch.object(update_service, "read_parquet") as parquet:
+        with (
+            patch.object(update_service.requests, "get", return_value=response) as get,
+            patch.object(update_service, "read_parquet") as parquet,
+        ):
             update_service.get_github_parquet_file("data/sleeves.parquet")
             self.assertEqual(
                 get.call_args.kwargs["params"], {"ref": "feature/asset-names"}
@@ -959,6 +1050,7 @@ class QualityOfLifeTests(unittest.TestCase):
 
     def test_branch_switch_refreshes_same_date_and_records_success_only(self):
         from contextlib import ExitStack
+
         from pages.config import Config
         from util.metadata_source import metadata_source_key
 
@@ -1005,19 +1097,18 @@ class QualityOfLifeTests(unittest.TestCase):
         from pages.config import Config
 
         page = Config()
-        with patch(
-            "pages.config.get_github_raw_file", return_value="2026-10-20"
-        ), patch(
-            "pages.config.update_sleeves", side_effect=RuntimeError("download failed")
-        ), patch(
-            "pages.config.update_fields"
-        ), patch(
-            "pages.config.update_cards"
-        ), patch(
-            "pages.config.update_characters"
+        with (
+            patch("pages.config.get_github_raw_file", return_value="2026-10-20"),
+            patch(
+                "pages.config.update_sleeves",
+                side_effect=RuntimeError("download failed"),
+            ),
+            patch("pages.config.update_fields"),
+            patch("pages.config.update_cards"),
+            patch("pages.config.update_characters"),
+            self.assertRaisesRegex(RuntimeError, "download failed"),
         ):
-            with self.assertRaisesRegex(RuntimeError, "download failed"):
-                page._get_data()
+            page._get_data()
         self.assertEqual(APP_CONFIG.version, "2026-10-19")
         self.assertTrue(page.updateButton.isEnabled())
         page.close()

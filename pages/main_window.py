@@ -4,9 +4,10 @@ This module provides the main application window that hosts all the different
 pages and handles navigation between them.
 """
 
-from PySide6 import QtWidgets, QtCore, QtGui
 from pyqttoast import ToastPreset
+from PySide6 import QtCore, QtGui, QtWidgets
 
+from database.objects import session
 from pages.backups import Backups
 from pages.card import Card
 from pages.character import Character
@@ -14,9 +15,8 @@ from pages.config import Config
 from pages.field import Field
 from pages.sleeve import Sleeve
 from pages.ui.main_window import Ui_MainWindow
-from util.game_discovery import normalize_game_path
-from database.objects import session
 from util.constants import APP_CONFIG, BG_TEMPLATE
+from util.game_discovery import normalize_game_path
 from util.ui_util import show_toast
 
 
@@ -115,8 +115,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         style = QtCore.Qt.ToolButtonStyle.ToolButtonTextUnderIcon
         self.toolBar.setToolButtonStyle(style)
         self.toolBar.setIconSize(icon_size)
-        self.toolBar.setStyleSheet(
-            """
+        self.toolBar.setStyleSheet("""
             QToolBar QToolButton {
                 color: #f2f2f2;
                 background-color: transparent;
@@ -138,8 +137,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
                 background-color: transparent;
                 border-color: transparent;
             }
-            """
-        )
+            """)
         self._navigation_buttons = [
             self.actionconfig_button,
             self.actionsleeve_button,
@@ -148,9 +146,16 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
             self.actioncharacter_button,
             self.actionbackups_button,
         ]
-        labels = ["Configuration", "Sleeves", "Cards", "Fields", "Characters", "Backups"]
+        labels = [
+            "Configuration",
+            "Sleeves",
+            "Cards",
+            "Fields",
+            "Characters",
+            "Backups",
+        ]
 
-        for action, label in zip(self._navigation_buttons, labels):
+        for action, label in zip(self._navigation_buttons, labels, strict=True):
             action.setText(label)
             action.setToolTip(label)
             self._normalize_navigation_icon(action, icon_size)

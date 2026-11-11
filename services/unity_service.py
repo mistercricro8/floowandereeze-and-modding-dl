@@ -1,13 +1,14 @@
 """Unity Service Module.
 
-This module provides an abstract base class for Unity asset bundle manipulation.
-It includes common functionality for extracting textures, creating backups, and restoring
-assets from Unity bundles used in Yu-Gi-Oh! Duel Links.
+This module provides an abstract base class for Unity asset bundle
+manipulation. It includes common functionality for extracting textures,
+creating backups, and restoring assets from Unity bundles used in
+Yu-Gi-Oh! Duel Links.
 """
 
 from abc import ABC, abstractmethod
 from os import makedirs
-from os.path import join, isfile
+from os.path import isfile, join
 from shutil import copyfile
 
 from UnityPy import load as unity_load
@@ -19,15 +20,14 @@ from util.image_utils import slugify
 
 class UnityService(ABC):
     """
-    UnityService class provides methods for fetching and replacing images from Unity asset bundles.
+    UnityService class provides methods for fetching and replacing images
+    from Unity asset bundles.
     """
 
     def __init__(self, subfolder: str) -> None:
         self.bundle = None
         self.subfolder: str = subfolder
         self.image_path: str | None = None
-        # Normalised (left, top, right, bottom) crop rect in 0..1 image coords.
-        # None means no crop (stretch mode).
         self.crop_rect: tuple[float, float, float, float] | None = None
 
     @abstractmethod
@@ -44,8 +44,8 @@ class UnityService(ABC):
         Extracts a texture from a Unity bundle.
 
         :param name: The name of the texture to extract.
-        :param miss: A boolean value indicating if the extraction failed to find the bundle in the
-        LocalData folder.
+        :param miss: A boolean value indicating if the extraction failed to
+        find the bundle in the LocalData folder.
         :return: None
         """
         self.extract_asset_texture(name, "images", miss=miss)
@@ -55,8 +55,8 @@ class UnityService(ABC):
         Creates a backup of a Unity asset bundle.
 
         :param name: The name of the texture to extract.
-        :param miss: A boolean value indicating if the extraction failed to find the bundle in the
-        LocalData folder.
+        :param miss: A boolean value indicating if the extraction failed to
+        find the bundle in the LocalData folder.
         :return: None
 
         """
@@ -68,7 +68,8 @@ class UnityService(ABC):
 
         :param name: The name of the texture to extract.
         :param folder: The destination root for the extracted texture.
-        :param miss: A boolean value indicating if the extraction failed to find the bundle.
+        :param miss: A boolean value indicating if the extraction failed to
+        find the bundle.
         :return: None
         """
         try:
@@ -105,12 +106,12 @@ class UnityService(ABC):
         )
         if isfile(backup_path):
             current_image = self.image_path
-            current_crop  = self.crop_rect
+            current_crop = self.crop_rect
             self.image_path = backup_path
-            self.crop_rect  = None  # never crop when restoring a backup
+            self.crop_rect = None
             self.replace_bundle()
             self.image_path = current_image
-            self.crop_rect  = current_crop
+            self.crop_rect = current_crop
             return True
         return False
 

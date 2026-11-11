@@ -1,6 +1,6 @@
 """Interactive crop overlay widget with a resizable yellow crop rectangle."""
 
-from PySide6.QtCore import Qt, QRectF, QPointF, QSize, Signal
+from PySide6.QtCore import QPointF, QRectF, QSize, Qt, Signal
 from PySide6.QtGui import QColor, QCursor, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import QWidget
 
@@ -16,24 +16,22 @@ class CropOverlayWidget(QWidget):
 
     crop_changed = Signal()
 
-    _HANDLE = 10  # corner handle half-size in pixels
-    _MIN_DIM = 20  # minimum crop dimension in widget pixels
+    _HANDLE = 10
+    _MIN_DIM = 20
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self._pixmap: QPixmap | None = None
-        self._target_ratio: float | None = None  # width / height, None = free
-        self._image_rect: QRectF | None = None  # image position inside widget
-        self._crop_rect: QRectF | None = None  # crop box in widget coords
+        self._target_ratio: float | None = None
+        self._image_rect: QRectF | None = None
+        self._crop_rect: QRectF | None = None
 
-        self._drag_mode: str | None = None  # 'move' | 'tl'|'tr'|'bl'|'br'
+        self._drag_mode: str | None = None
         self._drag_start: QPointF | None = None
         self._drag_start_rect: QRectF | None = None
 
         self.setMouseTracking(True)
         self.setMinimumSize(QSize(100, 100))
-
-    # ------------------------------------------------------------------ public
 
     def set_image(self, path: str, target_ratio: float | None = None) -> None:
         """Load *path* and initialise the crop rectangle."""
@@ -42,7 +40,9 @@ class CropOverlayWidget(QWidget):
         self._recalculate()
         self.update()
 
-    def set_target_ratio(self, ratio: float | None, preserve_crop: bool = False) -> None:
+    def set_target_ratio(
+        self, ratio: float | None, preserve_crop: bool = False
+    ) -> None:
         """Change the constraint, optionally keeping the shared crop area."""
         if ratio == self._target_ratio:
             return
@@ -69,8 +69,6 @@ class CropOverlayWidget(QWidget):
             (cr.right() - ir.left()) / ir.width(),
             (cr.bottom() - ir.top()) / ir.height(),
         )
-
-    # ----------------------------------------------------------------- private
 
     def _recalculate(self) -> None:
         self._update_image_rect()
@@ -149,29 +147,31 @@ class CropOverlayWidget(QWidget):
             self._crop_rect = QRectF(nx, ny, sr.width(), sr.height())
             return
 
-        # Resize: compute new w/h from the dragged corner
-        if self._drag_mode in ("tl", "bl"):
-            new_w = sr.width() - dx
-        else:
-            new_w = sr.width() + dx
+        new_w = sr.width() - dx if self._drag_mode in ("tl", "bl") else sr.width() + dx
 
         if self._drag_mode in ("tl", "tr"):
             new_h = sr.height() - dy
         else:
             new_h = sr.height() + dy
 
-        # Lock aspect ratio if requested
         if ratio:
             if abs(dx) >= abs(dy):
                 new_h = new_w / ratio
             else:
                 new_w = new_h * ratio
 
-            # Fit both dimensions together so clamping cannot change the ratio.
             anchor_x = sr.right() if self._drag_mode in ("tl", "bl") else sr.left()
             anchor_y = sr.bottom() if self._drag_mode in ("tl", "tr") else sr.top()
-            max_w = anchor_x - ir.left() if self._drag_mode in ("tl", "bl") else ir.right() - anchor_x
-            max_h = anchor_y - ir.top() if self._drag_mode in ("tl", "tr") else ir.bottom() - anchor_y
+            max_w = (
+                anchor_x - ir.left()
+                if self._drag_mode in ("tl", "bl")
+                else ir.right() - anchor_x
+            )
+            max_h = (
+                anchor_y - ir.top()
+                if self._drag_mode in ("tl", "tr")
+                else ir.bottom() - anchor_y
+            )
             max_w = min(max_w, max_h * ratio)
             min_w = min(max_w, max(min_d, min_d * ratio))
             new_w = max(min_w, min(new_w, max_w))
@@ -181,21 +181,18 @@ class CropOverlayWidget(QWidget):
             self._crop_rect = QRectF(nx, ny, new_w, new_h)
             return
 
-        # Enforce minimum
         new_w = max(min_d, new_w)
         new_h = max(min_d, new_h)
 
-        # Anchor opposite corner
         if self._drag_mode == "tl":
             nx, ny = sr.right() - new_w, sr.bottom() - new_h
         elif self._drag_mode == "tr":
             nx, ny = sr.left(), sr.bottom() - new_h
         elif self._drag_mode == "bl":
             nx, ny = sr.right() - new_w, sr.top()
-        else:  # br
+        else:
             nx, ny = sr.left(), sr.top()
 
-        # Clamp to image bounds
         nx = max(ir.left(), min(nx, ir.right() - min_d))
         ny = max(ir.top(), min(ny, ir.bottom() - min_d))
         new_w = min(new_w, ir.right() - nx)
@@ -204,8 +201,6 @@ class CropOverlayWidget(QWidget):
         new_h = max(min_d, new_h)
 
         self._crop_rect = QRectF(nx, ny, new_w, new_h)
-
-    # ----------------------------------------------------------- Qt overrides
 
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton and self._crop_rect:
@@ -257,7 +252,6 @@ class CropOverlayWidget(QWidget):
         qp = QPainter(self)
         ir = self._image_rect
 
-        # Draw the image scaled to fill _image_rect
         scaled = self._pixmap.scaled(
             ir.size().toSize(),
             Qt.AspectRatioMode.IgnoreAspectRatio,
@@ -267,8 +261,6 @@ class CropOverlayWidget(QWidget):
 
         if self._crop_rect:
             cr = self._crop_rect
-
-            # Dark overlay in the four strips around the crop rect
             overlay = QColor(0, 0, 0, 110)
             top_h = max(0.0, cr.top() - ir.top())
             bot_h = max(0.0, ir.bottom() - cr.bottom())
@@ -279,13 +271,11 @@ class CropOverlayWidget(QWidget):
             qp.fillRect(QRectF(ir.left(), cr.top(), left_w, cr.height()), overlay)
             qp.fillRect(QRectF(cr.right(), cr.top(), right_w, cr.height()), overlay)
 
-            # Yellow dashed border
             qp.setRenderHint(QPainter.RenderHint.Antialiasing)
             qp.setPen(QPen(QColor(255, 220, 0), 2, Qt.PenStyle.DashLine))
             qp.setBrush(Qt.BrushStyle.NoBrush)
             qp.drawRect(cr)
 
-            # White corner handles
             h = float(self._HANDLE)
             qp.setPen(QPen(QColor(255, 220, 0), 2))
             qp.setBrush(QColor(255, 255, 255, 210))

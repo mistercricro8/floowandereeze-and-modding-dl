@@ -1,10 +1,10 @@
+from typing import override
+
+from UnityPy import load as unity_load
 from UnityPy.enums import TextureFormat
-from typing_extensions import override
 
 from services.unity_service import UnityService
 from unity.unity_utils import prepare_environment
-from UnityPy import load as unity_load
-
 from util.constants import APP_CONFIG
 from util.image_utils import (
     add_sleeve_border,
@@ -15,7 +15,6 @@ from util.image_utils import (
 
 
 class SleeveService(UnityService):
-
     def __init__(self):
         super().__init__("sleeves")
         self.border: bool | None = None
@@ -33,7 +32,6 @@ class SleeveService(UnityService):
 
         for obj in env.objects:
             if obj.type.name == "Texture2D":
-
                 data = obj.read()
 
                 raw = convert_image(self.image_path)

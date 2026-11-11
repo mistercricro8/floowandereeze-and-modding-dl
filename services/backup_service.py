@@ -6,7 +6,7 @@ import stat
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from tempfile import NamedTemporaryFile, TemporaryDirectory
-from zipfile import ZipFile, ZIP_DEFLATED
+from zipfile import ZIP_DEFLATED, ZipFile
 
 CATEGORY_LABELS = {
     "cards": "Cards",
@@ -170,7 +170,7 @@ class BackupService:
         return count
 
 
-def sync_backup_flags(service):
+def sync_backup_flags(service: "BackupService") -> None:
     """Update loaded ORM assets from their actual restore-source files."""
     from database import models
     from database.objects import session
@@ -180,7 +180,11 @@ def sync_backup_flags(service):
         (models.CardModel, "cards", ("large_bundle",)),
         (models.SleeveModel, "sleeves", ("medium_bundle",)),
         (models.FieldModel, "fields", ("medium_bundle",)),
-        (models.CharacterModel, "characters", tuple(models.CharacterAssets._ENUM_TO_ATTR.values())),
+        (
+            models.CharacterModel,
+            "characters",
+            tuple(models.CharacterAssets._ENUM_TO_ATTR.values()),
+        ),
     )
     existing = {entry.name.casefold() for entry in service.inventory()}
     for model, category, fields in mappings:

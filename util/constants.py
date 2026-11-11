@@ -8,7 +8,6 @@ from database.migrations import run_migrations
 from database.models import AppConfig
 from database.objects import session
 
-# File-related constants
 FILE: dict[str, str | list[str]] = {
     "IMAGE_NAME": "image.png",
     "UNITY": "data.unity3d",
@@ -16,90 +15,60 @@ FILE: dict[str, str | list[str]] = {
     "CARD_SPRITE_ATLAS": "cardspriteatlas",
 }
 
-# Where the card art is located in the card face images
-CARD_ART_COORDINATES: dict[str, tuple[int, int, int, int]] = {
-    "small": (16, 24, 112, 90),
-    "medium": (32, 48, 225, 180),
-    "large": (64, 95, 449, 360),
-}
-
-# CSS template for background styling
 BG_TEMPLATE: str = """
     #centralwidget {
         $BG$
         margin: 0;
         padding: 0;
     }
-    
+
     .QListView, .QLineEdit, .QListWidget, #preview_frame, #current_frame {
         background-color: rgba(12, 12, 12, 0.7);
     }
-    
+
     .QPushButton {
         border: 1px solid #121212;
         border-radius: 5px;
         padding: 3px;
         width: 90%;
     }
-    
+
     .QToolBar::item:hover {
         background-color: rgba(12, 12, 12, 0.7);
     }
-    
+
     .QPushButton:hover {
         border: 1px solid darkgreen;
     }
-    
+
     .QPushButton:disabled {
         border: 1px solid #523000;
     }
 """
 """
-    CSS template to apply on background changes, the $VALUE$ placeholders must be replaced with nothing 
-    or valid CSS
+    CSS template to apply on background changes, the $VALUE$ placeholders
+    must be replaced with nothing or valid CSS
 """
 
 
-# File filter for image selection dialogs
 IMAGE_FILTER: str = "Image Files (*.png *.jpg *.jpeg)"
+IMAGE_EXTENSIONS: tuple[str, ...] = (".png", ".jpg", ".jpeg", ".bmp", ".gif")
 """
     Types of supported images
 """
 
-# URL for data updates
-DATA_URL: str = (
-    "https://raw.githubusercontent.com/Nauder/floowandereeze-and-modding/main/data.json"
+FIT_MODE_BUTTON_STYLE: str = (
+    "QPushButton { border: 1px solid gray; padding: 3px 10px; border-radius: 3px; }"
+    "QPushButton:checked { background-color: #3a7cc1; color: white; "
+    "border-color: #2a6cb1; }"
 )
-"""
-    Data update file URL
-"""
 
-# Check for migrations before getting app config data
 run_migrations()
 
-# Global application configuration from database
 APP_CONFIG: AppConfig = session.query(AppConfig).first()
 """
     Database user config, created if not exists on start.
 """
-
-
-class AppSession:
-    """
-    Global application session state.
-
-    This class holds state variables that persist throughout the application's
-    lifetime but don't need to be stored in the database.
-
-    Attributes:
-        fresh_card_metadata: Flag indicating if card metadata needs to be refreshed
-    """
-
-    fresh_card_metadata = False
-
-
-# Global application session instance
-APP_SESSION: AppSession = AppSession()
 
 if not APP_CONFIG:
     new_app = AppConfig(game_path="")

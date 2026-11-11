@@ -6,7 +6,7 @@ from zipfile import BadZipFile
 from PySide6 import QtCore, QtWidgets
 from sqlalchemy.exc import SQLAlchemyError
 
-from services.backup_service import BackupService, CATEGORY_LABELS, sync_backup_flags
+from services.backup_service import CATEGORY_LABELS, BackupService, sync_backup_flags
 
 logger = logging.getLogger(__name__)
 
@@ -172,7 +172,8 @@ class BackupPicker(QtWidgets.QWidget):
 
     def _update_summary(self):
         self.summary.setText(
-            f"{len(self.entries)} backups available · {len(self.names())} in action scope"
+            f"{len(self.entries)} backups available · "
+            f"{len(self.names())} in action scope"
         )
 
 
@@ -252,7 +253,6 @@ class Backups(QtWidgets.QWidget):
                 f"Files changed, but backup indicators could not be updated: {error}"
             )
             return
-        # ORM identities update in place; notify lists without reloading game textures.
         from pages.models.asset_list_model import AssetListModel
 
         for page in self.window().findChildren(QtWidgets.QWidget):
@@ -270,7 +270,10 @@ class Backups(QtWidgets.QWidget):
         if not names:
             return
         path, _ = QtWidgets.QFileDialog.getSaveFileName(
-            self, "Export backups", "floo-duel-links-backups.zip", "ZIP archives (*.zip)"
+            self,
+            "Export backups",
+            "floo-duel-links-backups.zip",
+            "ZIP archives (*.zip)",
         )
         if not path:
             return

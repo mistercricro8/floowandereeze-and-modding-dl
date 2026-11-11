@@ -109,13 +109,3 @@ class CardArtCoordinates(Enum):
     SMALL = (16, 24, 112, 90)
     MEDIUM = (32, 48, 225, 180)
     LARGE = (64, 95, 449, 360)
-
-
-class IconSize(Enum):
-    """
-    Sizes of the different resolutions of the player icon, in pixels.
-    """
-
-    SMALL = 128
-    MEDIUM = 256
-    BIG = 512

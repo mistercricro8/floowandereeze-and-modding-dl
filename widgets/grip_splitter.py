@@ -1,7 +1,5 @@
 """Splitter widgets with a visible, responsive drag grip."""
 
-from typing import Optional
-
 from PySide6 import QtCore, QtGui, QtWidgets
 
 
@@ -65,7 +63,7 @@ class GripSplitter(QtWidgets.QSplitter):
     def __init__(
         self,
         orientation: QtCore.Qt.Orientation,
-        parent: Optional[QtWidgets.QWidget] = None,
+        parent: QtWidgets.QWidget | None = None,
     ) -> None:
         super().__init__(orientation, parent)
         self.setHandleWidth(self.HANDLE_WIDTH)

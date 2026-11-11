@@ -1,8 +1,7 @@
-from pages.models.named_asset_list_model import asset_name
-from widgets.responsive_editor import ResponsiveEditor
-from PySide6 import QtWidgets, QtCore
+from pyqttoast import ToastPreset
+from PySide6 import QtCore, QtWidgets
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QPixmap, QDragEnterEvent, QDropEvent
+from PySide6.QtGui import QDragEnterEvent, QDropEvent, QPixmap
 from PySide6.QtWidgets import (
     QButtonGroup,
     QFileDialog,
@@ -11,31 +10,32 @@ from PySide6.QtWidgets import (
     QPushButton,
     QStackedWidget,
 )
-from pyqttoast import ToastPreset
 
 from database.objects import session
 from dialogs.simple_dialogs import show_color_dialog
+from pages.models.named_asset_list_model import asset_name
 from pages.models.sleeve_list_model import SleeveListModel
 from pages.ui.sleeve import Ui_Sleeve
 from services.sleeve_service import SleeveService
 from unity.unity_utils import fetch_bundle_thumb
-from util.constants import IMAGE_FILTER, APP_CONFIG
+from util.constants import (
+    APP_CONFIG,
+    FIT_MODE_BUTTON_STYLE,
+    IMAGE_EXTENSIONS,
+    IMAGE_FILTER,
+)
 from util.ui_util import show_toast
 from widgets.crop_overlay_widget import CropOverlayWidget
 from widgets.image_viewer import ImageViewer
+from widgets.responsive_editor import ResponsiveEditor
 
-# Typical sleeve texture proportions (portrait card sleeve)
 _SLEEVE_CROP_RATIO = 256 / 374
-
-_BTN_STYLE = (
-    "QPushButton { border: 1px solid gray; padding: 3px 10px; border-radius: 3px; }"
-    "QPushButton:checked { background-color: #3a7cc1; color: white; border-color: #2a6cb1; }"
-)
+_BTN_STYLE = FIT_MODE_BUTTON_STYLE
 
 
 class Sleeve(QtWidgets.QWidget, Ui_Sleeve):
     def __init__(self):
-        super(Sleeve, self).__init__()
+        super().__init__()
         self.setupUi(self)
 
         self.service = SleeveService()
@@ -55,12 +55,9 @@ class Sleeve(QtWidgets.QWidget, Ui_Sleeve):
             header=self.horizontalLayout,
         )
 
-        # Enable drag and drop
         self.setAcceptDrops(True)
 
         self._connect_callbacks()
-
-    # ---------------------------------------------------------------- crop UI
 
     def _init_current_viewer(self) -> None:
         """Replace self.current QLabel with an ImageViewer (preserves aspect ratio)."""
@@ -86,7 +83,7 @@ class Sleeve(QtWidgets.QWidget, Ui_Sleeve):
         old_preview.deleteLater()
 
         stretch_viewer = ImageViewer()
-        stretch_viewer.setObjectName("preview")  # keeps #preview CSS selector working
+        stretch_viewer.setObjectName("preview")
         stretch_viewer.setMaximumSize(max_size)
         stretch_viewer.setMinimumSize(100, 100)
         self.preview = stretch_viewer
@@ -94,17 +91,16 @@ class Sleeve(QtWidgets.QWidget, Ui_Sleeve):
         self._mode_stack = QStackedWidget()
         self._mode_stack.setMaximumSize(max_size)
         self._mode_stack.setMinimumSize(100, 100)
-        self._mode_stack.addWidget(self.preview)  # index 0 – stretch
+        self._mode_stack.addWidget(self.preview)
 
         self._crop_widget = CropOverlayWidget()
         self._crop_widget.setMaximumSize(self.preview.maximumSize())
         self._crop_widget.setMinimumSize(150, 150)
         self._crop_widget.crop_changed.connect(self._on_crop_changed)
-        self._mode_stack.addWidget(self._crop_widget)  # index 1 – crop
+        self._mode_stack.addWidget(self._crop_widget)
 
         self.main_content.insertWidget(idx, self._mode_stack)
 
-        # Fit-mode button row
         fit_layout = QHBoxLayout()
         fit_layout.addStretch()
         fit_layout.addWidget(QLabel("Fit Mode:"))
@@ -165,18 +161,11 @@ class Sleeve(QtWidgets.QWidget, Ui_Sleeve):
             self.service.crop_rect = None
             self._mode_stack.setCurrentIndex(0)
 
-    # ----------------------------------------------------------- Qt overrides
-
     def dragEnterEvent(self, event: QDragEnterEvent) -> None:
         """Accepts drag and drop of image files."""
         if event.mimeData().hasUrls():
-            # Check if the dragged file is an image
             for url in event.mimeData().urls():
-                if (
-                    url.toLocalFile()
-                    .lower()
-                    .endswith((".png", ".jpg", ".jpeg", ".bmp", ".gif"))
-                ):
+                if url.toLocalFile().lower().endswith(IMAGE_EXTENSIONS):
                     event.acceptProposedAction()
                     return
         event.ignore()
@@ -185,11 +174,9 @@ class Sleeve(QtWidgets.QWidget, Ui_Sleeve):
         """Handles the drop event of an image file."""
         for url in event.mimeData().urls():
             file_path = url.toLocalFile()
-            if file_path.lower().endswith((".png", ".jpg", ".jpeg", ".bmp", ".gif")):
+            if file_path.lower().endswith(IMAGE_EXTENSIONS):
                 self._load_image(file_path)
                 break
-
-    # ---------------------------------------------------------------- private
 
     def _restore(self):
         if self.service.restore_asset():
@@ -308,14 +295,11 @@ class Sleeve(QtWidgets.QWidget, Ui_Sleeve):
         self.fadeCheckBox.setEnabled(border_enabled)
 
         if border_enabled:
-            # For preview, we'll use a simple border - the actual fade effect will be applied during replacement
-            self.preview.setStyleSheet(
-                f"""
+            self.preview.setStyleSheet(f"""
                 #preview {{
                     border: 15px solid {self.service.border_color};
                 }}
-            """
-            )
+            """)
         else:
             self.preview.setStyleSheet("")
             self.fadeCheckBox.setChecked(False)
@@ -325,7 +309,5 @@ class Sleeve(QtWidgets.QWidget, Ui_Sleeve):
 
     def _toggle_fade(self):
         self.service.border_fade = self.fadeCheckBox.isChecked()
-        # Update preview to show fade effect indication (we'll keep the simple border for preview)
         if self.fadeCheckBox.isChecked() and self.checkBox.isChecked():
-            # Could add a visual indicator that fade is enabled, but for now keep simple border
             pass

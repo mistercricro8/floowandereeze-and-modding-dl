@@ -1,19 +1,15 @@
-from UnityPy.enums import TextureFormat
-from typing_extensions import override
+from typing import override
 
-from database.models import FieldModel
-from database.objects import session
+from UnityPy import load as unity_load
+from UnityPy.enums import TextureFormat
+
 from services.unity_service import UnityService
 from unity.unity_utils import prepare_environment
-from UnityPy import load as unity_load
-
 from util.constants import APP_CONFIG
-from util.enums import FieldCoordinates
-from util.image_utils import convert_image, crop_to_rect, paste_scaled_image
+from util.image_utils import convert_image, crop_to_rect
 
 
 class FieldService(UnityService):
-
     def __init__(self):
         super().__init__("fields")
 
@@ -28,7 +24,6 @@ class FieldService(UnityService):
 
         for obj in env.objects:
             if obj.type.name == "Texture2D":
-
                 data = obj.read()
 
                 img = convert_image(self.image_path)

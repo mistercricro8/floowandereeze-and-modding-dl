@@ -12,14 +12,10 @@ def show_color_dialog():
 
 def show_confirmation_dialog(message: str, warning=False) -> bool:
     message_box = QMessageBox()
-    message_box.setIcon(
-        QMessageBox.Warning if warning else QMessageBox.Question
-    )  # Set the icon to "Question"
+    message_box.setIcon(QMessageBox.Warning if warning else QMessageBox.Question)
     message_box.setWindowTitle("Confirmation")
     message_box.setText(message)
-    message_box.setStandardButtons(
-        QMessageBox.Yes | QMessageBox.No
-    )  # Add Yes and No buttons
-    message_box.setDefaultButton(QMessageBox.No)  # Set default focus to "No"
+    message_box.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
+    message_box.setDefaultButton(QMessageBox.No)
 
     return message_box.exec() == QMessageBox.Yes

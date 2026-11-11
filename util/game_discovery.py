@@ -2,9 +2,9 @@
 
 import os
 import re
-from pathlib import Path
 from ntpath import normcase, normpath
 from os.path import exists, join
+from pathlib import Path
 
 try:
     import winreg

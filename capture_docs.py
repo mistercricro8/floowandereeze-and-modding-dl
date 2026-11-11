@@ -4,14 +4,14 @@ Application imports must follow the switch to the disposable working directory.
 """
 
 import argparse
-from contextlib import closing
 import json
 import os
-from pathlib import Path
 import sqlite3
 import sys
 import tempfile
 import time
+from contextlib import closing
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 PAGES = ("config", "sleeve", "card", "field", "character", "backups")
@@ -50,9 +50,13 @@ def capture(args, sandbox):
         os.environ["QT_QPA_PLATFORM"] = "offscreen"
     os.environ["QT_SCALE_FACTOR"] = "1"
     os.environ["TEMP"] = os.environ["TMP"] = str(sandbox)
-    with closing(sqlite3.connect(args.database.as_uri() + "?mode=ro", uri=True)) as source:
-        with closing(sqlite3.connect(sandbox / "database.db")) as destination:
-            source.backup(destination)
+    with (
+        closing(
+            sqlite3.connect(args.database.as_uri() + "?mode=ro", uri=True)
+        ) as source,
+        closing(sqlite3.connect(sandbox / "database.db")) as destination,
+    ):
+        source.backup(destination)
     os.chdir(sandbox)
     sys.path.insert(0, str(ROOT))
 
@@ -93,7 +97,6 @@ def capture(args, sandbox):
     guard.start(100)
 
     def settle():
-        # Models join their thumbnail workers before returning. Drain layout events.
         for _ in range(25):
             app.processEvents()
             time.sleep(0.02)
@@ -105,11 +108,14 @@ def capture(args, sandbox):
         pixmap = widget.grab()
         if pixmap.isNull() or not pixmap.save(str(args.output / filename)):
             raise RuntimeError(f"Could not save {filename}")
-        manifest["captures"].append({
-            "file": filename, "selected": selected,
-            "pixels": [pixmap.width(), pixmap.height()],
-            "logical_size": [widget.width(), widget.height()],
-        })
+        manifest["captures"].append(
+            {
+                "file": filename,
+                "selected": selected,
+                "pixels": [pixmap.width(), pixmap.height()],
+                "logical_size": [widget.width(), widget.height()],
+            }
+        )
         print(f"Saved {args.output / filename}", flush=True)
 
     def source_image(pixmap, name):
@@ -122,9 +128,11 @@ def capture(args, sandbox):
         return str(path)
 
     try:
-        if any(name not in ("config", "backups") for name in args.pages):
-            if not normalize_game_path(APP_CONFIG.game_path or ""):
-                raise RuntimeError("Configure a downloaded Duel Links account in the app first.")
+        needs_game = any(name not in ("config", "backups") for name in args.pages)
+        if needs_game and not normalize_game_path(APP_CONFIG.game_path or ""):
+            raise RuntimeError(
+                "Configure a downloaded Duel Links account in the app first."
+            )
         APP_CONFIG.background_path = None
         app.setPalette(get_dark_mode_palette(app))
         splash = QtWidgets.QSplashScreen()
@@ -141,18 +149,22 @@ def capture(args, sandbox):
             index = PAGES.index(name)
             window._navigation_buttons[index].trigger()
             settle()
-            if index not in window._loaded_pages or window.mainStack.currentIndex() != index:
+            if (
+                index not in window._loaded_pages
+                or window.mainStack.currentIndex() != index
+            ):
                 raise RuntimeError(f"Could not open {name}")
             page = window.mainStack.currentWidget()
             selected = None
             if name == "config":
-                # Display redaction only: texture readers still use the real path.
                 redactions = [
                     (page.gameLine, "C:/Games/Duel Links/LocalData/00000000"),
                     (page.bgLine, ""),
                 ]
                 if is_local_metadata_source(page.metadataRepositoryLine.text()):
-                    redactions.append((page.metadataRepositoryLine, "C:/Projects/duel-links-etl"))
+                    redactions.append(
+                        (page.metadataRepositoryLine, "C:/Projects/duel-links-etl")
+                    )
                 for control, text in redactions:
                     blocker = QtCore.QSignalBlocker(control)
                     control.setText(text)
@@ -194,7 +206,6 @@ def capture(args, sandbox):
                 dialog = CharacterEditDialog(asset, window)
                 dialog.show()
                 settle()
-                # Find a real installed asset rather than accepting an empty preview.
                 for row in range(dialog.asset_list.count()):
                     dialog.asset_list.setCurrentRow(row)
                     settle()
@@ -208,7 +219,9 @@ def capture(args, sandbox):
                 dialog.reject()
                 dialog = None
         args.manifest.parent.mkdir(parents=True, exist_ok=True)
-        args.manifest.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+        args.manifest.write_text(
+            json.dumps(manifest, indent=2) + "\n", encoding="utf-8"
+        )
         print(f"Saved manifest: {args.manifest}", flush=True)
     finally:
         guard.stop()
@@ -230,7 +243,9 @@ def main():
     (ROOT / "build").mkdir(exist_ok=True)
     previous = Path.cwd()
     try:
-        with tempfile.TemporaryDirectory(prefix="docs-capture-", dir=ROOT / "build") as directory:
+        with tempfile.TemporaryDirectory(
+            prefix="docs-capture-", dir=ROOT / "build"
+        ) as directory:
             try:
                 capture(args, Path(directory))
             finally:

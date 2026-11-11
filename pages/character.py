@@ -1,9 +1,8 @@
 """Character management page module."""
 
-from typing import Optional
+from pyqttoast import ToastPreset
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import QLineEdit, QWidget
-from pyqttoast import ToastPreset
 
 from database.models import CharacterModel
 from database.objects import session
@@ -24,7 +23,7 @@ class Character(QWidget, Ui_Character):
         self.service = CharacterService()
         self.model = CharacterListModel()
         self.charactersView.setModel(self.model)
-        self.selected: Optional[CharacterModel] = None
+        self.selected: CharacterModel | None = None
         self.favorite.setEnabled(False)
 
         self.searchEdit = QLineEdit(self)
@@ -126,9 +125,7 @@ class Character(QWidget, Ui_Character):
             return
         character = self.model.assets[index.row()]
 
-        # Open the character edit dialog
         dialog = CharacterEditDialog(character, self)
         dialog.exec()
 
-        # Refresh the model after dialog closes to update any changes
         self.model.refresh()

@@ -1,9 +1,9 @@
 """Card art style search controls for named accessory editors."""
 
+from pyqttoast import ToastPreset
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor, QIcon, QPalette
 from PySide6.QtWidgets import QCompleter, QLabel, QLineEdit, QPushButton
-from pyqttoast import ToastPreset
 
 from util.ui_util import show_toast
 

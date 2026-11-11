@@ -1,11 +1,9 @@
 from pathlib import Path
 
-from database.objects import session
-from pages.models.named_asset_list_model import asset_name
-from widgets.responsive_editor import ResponsiveEditor
+from pyqttoast import ToastPreset
 from PySide6 import QtWidgets
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QPixmap, QDragEnterEvent, QDropEvent
+from PySide6.QtGui import QDragEnterEvent, QDropEvent, QPixmap
 from PySide6.QtWidgets import (
     QButtonGroup,
     QFileDialog,
@@ -14,30 +12,32 @@ from PySide6.QtWidgets import (
     QPushButton,
     QStackedWidget,
 )
-from pyqttoast import ToastPreset
 
+from database.objects import session
 from pages.models.field_list_model import FieldListModel
+from pages.models.named_asset_list_model import asset_name
 from pages.ui.field import Ui_Field
 from services.field_service import FieldService
-from unity.unity_utils import fetch_field_thumb, fetch_bundle_thumb
-from util.constants import APP_CONFIG, IMAGE_FILTER
+from unity.unity_utils import fetch_bundle_thumb, fetch_field_thumb
+from util.constants import (
+    APP_CONFIG,
+    FIT_MODE_BUTTON_STYLE,
+    IMAGE_EXTENSIONS,
+    IMAGE_FILTER,
+)
 from util.image_utils import slugify
 from util.ui_util import show_toast
 from widgets.crop_overlay_widget import CropOverlayWidget
 from widgets.image_viewer import ImageViewer
+from widgets.responsive_editor import ResponsiveEditor
 
-# Standard field texture ratio (2 : 1 landscape)
 _FIELD_CROP_RATIO = 2.0
-
-_BTN_STYLE = (
-    "QPushButton { border: 1px solid gray; padding: 3px 10px; border-radius: 3px; }"
-    "QPushButton:checked { background-color: #3a7cc1; color: white; border-color: #2a6cb1; }"
-)
+_BTN_STYLE = FIT_MODE_BUTTON_STYLE
 
 
 class Field(QtWidgets.QWidget, Ui_Field):
     def __init__(self):
-        super(Field, self).__init__()
+        super().__init__()
         self.setupUi(self)
 
         self.service = FieldService()
@@ -57,12 +57,9 @@ class Field(QtWidgets.QWidget, Ui_Field):
             header=None,
         )
 
-        # Enable drag and drop
         self.setAcceptDrops(True)
 
         self._connect_callbacks()
-
-    # ---------------------------------------------------------------- crop UI
 
     def _init_current_viewer(self) -> None:
         """Replace self.current QLabel with an ImageViewer (preserves aspect ratio)."""
@@ -80,7 +77,6 @@ class Field(QtWidgets.QWidget, Ui_Field):
 
     def _setup_crop_ui(self) -> None:
         """Replace the preview QLabel with a mode-stack and add fit-mode buttons."""
-        # For field, preview lives inside self.horizontalLayout_2
         old_preview = self.preview
         max_size = old_preview.maximumSize()
         idx = self.horizontalLayout_2.indexOf(old_preview)
@@ -96,17 +92,16 @@ class Field(QtWidgets.QWidget, Ui_Field):
         self._mode_stack = QStackedWidget()
         self._mode_stack.setMaximumSize(max_size)
         self._mode_stack.setMinimumSize(100, 50)
-        self._mode_stack.addWidget(self.preview)  # index 0 – stretch
+        self._mode_stack.addWidget(self.preview)
 
         self._crop_widget = CropOverlayWidget()
         self._crop_widget.setMaximumSize(self.preview.maximumSize())
         self._crop_widget.setMinimumSize(150, 75)
         self._crop_widget.crop_changed.connect(self._on_crop_changed)
-        self._mode_stack.addWidget(self._crop_widget)  # index 1 – crop
+        self._mode_stack.addWidget(self._crop_widget)
 
         self.horizontalLayout_2.insertWidget(idx, self._mode_stack)
 
-        # Fit-mode button row
         fit_layout = QHBoxLayout()
         fit_layout.addStretch()
         fit_layout.addWidget(QLabel("Fit Mode:"))
@@ -166,8 +161,6 @@ class Field(QtWidgets.QWidget, Ui_Field):
         else:
             self.service.crop_rect = None
             self._mode_stack.setCurrentIndex(0)
-
-    # ---------------------------------------------------------------- private
 
     def _connect_callbacks(self):
         self.fieldsView.clicked.connect(self._on_field_clicked)
@@ -246,13 +239,8 @@ class Field(QtWidgets.QWidget, Ui_Field):
     def dragEnterEvent(self, event: QDragEnterEvent) -> None:
         """Accepts drag and drop of image files."""
         if event.mimeData().hasUrls():
-            # Check if the dragged file is an image
             for url in event.mimeData().urls():
-                if (
-                    url.toLocalFile()
-                    .lower()
-                    .endswith((".png", ".jpg", ".jpeg", ".bmp", ".gif"))
-                ):
+                if url.toLocalFile().lower().endswith(IMAGE_EXTENSIONS):
                     event.acceptProposedAction()
                     return
         event.ignore()
@@ -261,6 +249,6 @@ class Field(QtWidgets.QWidget, Ui_Field):
         """Handles the drop event of an image file."""
         for url in event.mimeData().urls():
             file_path = url.toLocalFile()
-            if file_path.lower().endswith((".png", ".jpg", ".jpeg", ".bmp", ".gif")):
+            if file_path.lower().endswith(IMAGE_EXTENSIONS):
                 self._load_image(file_path)
                 break

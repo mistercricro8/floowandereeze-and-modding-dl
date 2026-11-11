@@ -1,15 +1,14 @@
 from abc import abstractmethod
+from typing import override
 
 from PySide6 import QtCore
 from sqlalchemy.orm import Mapped
-from typing_extensions import override
 
 from database.models import UnityAsset
 from database.objects import session
 
 
 class AssetListModel(QtCore.QAbstractListModel):
-
     def __init__(self, assets, database_model):
         super().__init__()
         self.assets: list[UnityAsset] = assets

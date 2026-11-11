@@ -1,22 +1,23 @@
+import logging
 import struct
 from pathlib import Path
+from typing import override
 
 from PIL import Image, ImageOps
+from UnityPy import load as unity_load
 from UnityPy.enums import TextureFormat
-from typing_extensions import override
 
-from database.models import CharacterModel, CharacterAssetLayout
-from database.objects import session, DBsession
+from database.models import CharacterAssetLayout, CharacterModel
+from database.objects import DBsession, session
 from services.unity_service import UnityService
 from unity.unity_utils import prepare_environment
-from UnityPy import load as unity_load
-
 from util.constants import APP_CONFIG
 from util.image_utils import content_bounds, convert_image, crop_to_rect, slugify
 
+logger = logging.getLogger(__name__)
+
 
 class CharacterService(UnityService):
-
     def __init__(self):
         super().__init__("characters")
         self.preserve_transparent_padding = True
@@ -25,14 +26,11 @@ class CharacterService(UnityService):
         self, bundle: str, image: Image.Image
     ) -> tuple[int, int, int, int]:
         """Persist each bundle's initial layout before any replacement is written."""
-        # Use a separate transaction so previewing does not commit other UI edits.
         with DBsession() as layout_session:
             layout = layout_session.get(CharacterAssetLayout, bundle)
             if layout and (layout.width, layout.height) == image.size:
                 return tuple(layout.bounds)
 
-            # Existing installations may already have replaced textures. Their
-            # original backup is authoritative when seeding the layout cache.
             bounds = content_bounds(image)
             backup = Path("backups") / self.subfolder / f"{slugify(bundle)}.png"
             if backup.is_file():
@@ -74,11 +72,9 @@ class CharacterService(UnityService):
             if obj.type.name == "Texture2D":
                 data = obj.read()
 
-                # Resize to original texture dimensions to keep sprite vertex data valid
                 orig_size = (data.m_Width, data.m_Height)
                 bounds = self.replacement_content_bounds(self.bundle, data.image)
                 if self.crop_rect:
-                    # Keep the original content's position and transparent margins.
                     left, top, right, bottom = bounds
                     content = ImageOps.fit(
                         new_img,
@@ -98,7 +94,6 @@ class CharacterService(UnityService):
                 data.save()
                 break
 
-        # Fix sprite render data so it samples the full texture with a rectangular mesh
         if orig_size:
             w, h = orig_size
             for obj in env.objects:
@@ -134,9 +129,6 @@ class CharacterService(UnityService):
                             if "textureRectOffset" in rd:
                                 rd["textureRectOffset"] = {"x": 0.0, "y": 0.0}
 
-                            # Replace polygon mesh with a simple quad using packed vertex format.
-                            # Stream 0: position XYZ (float32 * 3 = 12 bytes/vertex)
-                            # Stream 1: UV XY (float32 * 2 = 8 bytes/vertex), packed after stream 0
                             if "m_VertexData" in rd and "m_IndexBuffer" in rd:
                                 ppu = float(tt.get("m_PixelsToUnits", 100.0))
                                 half_w = (w / 2.0) / ppu
@@ -172,7 +164,6 @@ class CharacterService(UnityService):
                                 vd["m_VertexCount"] = 4
                                 vd["m_DataSize"] = pos_data + uv_data
 
-                                # 2 triangles: (0,1,2) and (0,2,3), uint16 little-endian as byte list
                                 rd["m_IndexBuffer"] = list(
                                     struct.pack("<6H", 0, 1, 2, 0, 2, 3)
                                 )
@@ -195,7 +186,7 @@ class CharacterService(UnityService):
 
                         obj.save_typetree(tt)
                     except Exception as e:
-                        print(f"Error processing sprite: {e}")
+                        logger.warning("Error processing sprite: %s", e)
                         continue
 
         with open(f_path, "wb") as f:

@@ -109,12 +109,15 @@ class ResponsiveEditor(QtCore.QObject):
         icon = (
             QtCore.QSize(132, 66)
             if ratio > 1.5
-            else QtCore.QSize(90, 132) if ratio < 1 else QtCore.QSize(112, 112)
+            else QtCore.QSize(90, 132)
+            if ratio < 1
+            else QtCore.QSize(112, 112)
         )
         view.setIconSize(icon)
         view.setGridSize(QtCore.QSize(max(150, icon.width() + 16), icon.height() + 48))
         view.setStyleSheet(
-            "QListView::item:selected {background: rgba(21,160,111,0.3); border: 1px solid #15a06f; border-radius: 4px;}"
+            "QListView::item:selected {background: rgba(21,160,111,0.3); "
+            "border: 1px solid #15a06f; border-radius: 4px;}"
         )
         for edit in editor.findChildren(QtWidgets.QLineEdit):
             if edit.objectName() != "borderEdit":
@@ -137,7 +140,6 @@ class ResponsiveEditor(QtCore.QObject):
         return super().eventFilter(watched, event)
 
     def resize_images(self):
-        # Reserve space for source, fit mode and action rows above the results.
         height = max(100, min(650, self.scroll.viewport().height() - 155))
         width = max(100, (self.scroll.viewport().width() - 160) // 2)
         height = min(height, int(width / self.ratio))

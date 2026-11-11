@@ -5,7 +5,7 @@ import re
 from pathlib import Path
 
 DEFAULT_METADATA_REPOSITORY = "Nauder/floowandereeze-and-modding-etl-dl"
-DEFAULT_METADATA_BRANCH = ""  # Preserve GitHub's current repository-default behavior.
+DEFAULT_METADATA_BRANCH = ""
 METADATA_FILES = (
     "version.txt",
     "cards.parquet",
@@ -51,7 +51,8 @@ def normalize_metadata_source(repository, branch=""):
         raise ValueError("Invalid GitHub repository name.")
     if len(branch) > 255 or any(char.isspace() or ord(char) < 32 for char in branch):
         raise ValueError(
-            "Branch must be a name/ref without whitespace, or blank for the repository default."
+            "Branch must be a name/ref without whitespace, or blank for "
+            "the repository default."
         )
     return repository, branch
 

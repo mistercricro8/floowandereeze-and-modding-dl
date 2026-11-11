@@ -4,18 +4,16 @@ This module defines all SQLAlchemy models used to store application data,
 including configuration, card data, and various UI assets.
 """
 
-from typing import ClassVar, Optional, Any, List
+from typing import ClassVar
 
 from PySide6.QtGui import QIcon
-from sqlalchemy import String, Integer, Boolean, LargeBinary, Text, JSON
+from sqlalchemy import JSON, Boolean, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from database.objects import base, engine
 from util.enums import CharaAssetType
 
 
-# In theory all that inherit from this should have a `thumb: QIcon = QIcon()` attribute, but
-# pyinstaller fails to detect the attribute, so it is explicitly declared in the children.
 class UnityAsset:
     """
     Base class for Unity asset models.
@@ -60,7 +58,7 @@ class AppConfig(base):
         Text, default="Nauder/floowandereeze-and-modding-etl-dl"
     )
     metadata_branch: Mapped[str] = mapped_column(String(255), default="")
-    metadata_last_source: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    metadata_last_source: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
 class SleeveModel(UnityAsset, base):
@@ -74,7 +72,7 @@ class SleeveModel(UnityAsset, base):
 
     __tablename__ = "sleeve"
 
-    name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    name: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     small_bundle: Mapped[str] = mapped_column(String(8), unique=True)
     medium_bundle: Mapped[str] = mapped_column(String(8), unique=True)
@@ -94,7 +92,6 @@ class CardModel(UnityAsset, base):
 
     __tablename__ = "card"
 
-    # Original card name and description are kept separate from metadata so restoration is possible
     name: Mapped[str] = mapped_column(String(255))
     large_bundle: Mapped[str] = mapped_column(String(8), unique=True, nullable=True)
     medium_bundle: Mapped[str] = mapped_column(String(8), unique=True)
@@ -115,7 +112,7 @@ class FieldModel(UnityAsset, base):
 
     __tablename__ = "field"
 
-    name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    name: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     small_bundle: Mapped[str] = mapped_column(String(8), unique=True)
     medium_bundle: Mapped[str] = mapped_column(String(8), unique=True)
@@ -123,9 +120,9 @@ class FieldModel(UnityAsset, base):
 
 
 class CharacterAssets:
-    """Character assets container with dynamic mapping from CharaAssetType enum values."""
+    """Character assets container with dynamic mapping from CharaAssetType
+    enum values."""
 
-    # Create a mapping from enum values to attribute names
     _ENUM_TO_ATTR = {
         CharaAssetType.ICON: "icon",
         CharaAssetType.SELECT: "select",
@@ -217,7 +214,6 @@ class CharacterAssets:
         CharaAssetType.VERSUS: "versus",
     }
 
-    # Create reverse mapping from string values to enum
     _VALUE_TO_ENUM = {asset_type.value: asset_type for asset_type in CharaAssetType}
 
     def __init__(self):
@@ -225,13 +221,13 @@ class CharacterAssets:
         self.konami_id: int = 0
         self.series: str = ""
 
-        # Initialize all attributes
         for attr_name in self._ENUM_TO_ATTR.values():
             setattr(self, attr_name, None)
 
-    def set_asset_by_string(self, asset_string: str, value: Any) -> bool:
+    def set_asset_by_string(self, asset_string: str, value: str | None) -> bool:
         """Args:
-            asset_string: String to match against CharaAssetType values (e.g., "Chara001")
+            asset_string: String to match against CharaAssetType values
+            (e.g., "Chara001")
             value: Value to set for the matched asset
         Returns:
             True if match found and set, False otherwise
@@ -243,7 +239,7 @@ class CharacterAssets:
             return True
         return False
 
-    def get_asset_by_string(self, asset_string: str) -> Optional[Any]:
+    def get_asset_by_string(self, asset_string: str) -> str | None:
         """Get asset by matching the string against enum values.
         Args:
             asset_string: String to match against CharaAssetType values
@@ -256,31 +252,29 @@ class CharacterAssets:
             return getattr(self, attr_name)
         return None
 
-    def set_asset_by_enum(self, asset_type: CharaAssetType, value: Any) -> None:
+    def set_asset_by_enum(self, asset_type: CharaAssetType, value: str | None) -> None:
         """Set asset by CharaAssetType enum."""
         attr_name = self._ENUM_TO_ATTR[asset_type]
         setattr(self, attr_name, value)
 
-    def get_asset_by_enum(self, asset_type: CharaAssetType) -> Optional[Any]:
+    def get_asset_by_enum(self, asset_type: CharaAssetType) -> str | None:
         """Get asset by CharaAssetType enum."""
         attr_name = self._ENUM_TO_ATTR[asset_type]
         return getattr(self, attr_name)
 
     @classmethod
-    def get_supported_strings(cls) -> List[str]:
+    def get_supported_strings(cls) -> list[str]:
         """Get list of all supported asset strings."""
         return list(cls._VALUE_TO_ENUM.keys())
 
     def to_dict(self) -> dict:
         """Convert CharacterAssets to a dictionary for JSON serialization."""
         result = {}
-        # Add konami_id and series if they exist
         if hasattr(self, "konami_id"):
             result["konami_id"] = self.konami_id
         if hasattr(self, "series"):
             result["series"] = self.series
 
-        # Add all asset attributes that are not None
         for attr_name in self._ENUM_TO_ATTR.values():
             value = getattr(self, attr_name, None)
             if value is not None:
@@ -300,104 +294,103 @@ class CharacterModel(UnityAsset, base):
 
     __tablename__ = "character"
 
-    name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    name: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     konami_id: Mapped[int] = mapped_column(Integer, unique=True)
     series: Mapped[str] = mapped_column(String(255))
 
-    # Asset bundle columns for each CharaAssetType
-    icon: Mapped[Optional[str]] = mapped_column(String(8), nullable=True)
-    select: Mapped[Optional[str]] = mapped_column(String(8), nullable=True)
-    duel_1: Mapped[Optional[str]] = mapped_column(String(8), nullable=True)
-    duel_2: Mapped[Optional[str]] = mapped_column(String(8), nullable=True)
-    duel_3: Mapped[Optional[str]] = mapped_column(String(8), nullable=True)
-    duel_4: Mapped[Optional[str]] = mapped_column(String(8), nullable=True)
-    duel_5: Mapped[Optional[str]] = mapped_column(String(8), nullable=True)
-    duel_6: Mapped[Optional[str]] = mapped_column(String(8), nullable=True)
-    duel_7: Mapped[Optional[str]] = mapped_column(String(8), nullable=True)
-    duel_8: Mapped[Optional[str]] = mapped_column(String(8), nullable=True)
-    duel_9: Mapped[Optional[str]] = mapped_column(String(8), nullable=True)
-    duel_10: Mapped[Optional[str]] = mapped_column(String(8), nullable=True)
-    duel_11: Mapped[Optional[str]] = mapped_column(String(8), nullable=True)
-    duel_12: Mapped[Optional[str]] = mapped_column(String(8), nullable=True)
-    duel_13: Mapped[Optional[str]] = mapped_column(String(8), nullable=True)
-    duel_14: Mapped[Optional[str]] = mapped_column(String(8), nullable=True)
-    duel_15: Mapped[Optional[str]] = mapped_column(String(8), nullable=True)
-    duel_16: Mapped[Optional[str]] = mapped_column(String(8), nullable=True)
-    duel_17: Mapped[Optional[str]] = mapped_column(String(8), nullable=True)
-    duel_18: Mapped[Optional[str]] = mapped_column(String(8), nullable=True)
-    duel_19: Mapped[Optional[str]] = mapped_column(String(8), nullable=True)
-    duel_20: Mapped[Optional[str]] = mapped_column(String(8), nullable=True)
-    duel_31: Mapped[Optional[str]] = mapped_column(String(8), nullable=True)
-    duel_32: Mapped[Optional[str]] = mapped_column(String(8), nullable=True)
-    duel_33: Mapped[Optional[str]] = mapped_column(String(8), nullable=True)
-    duel_34: Mapped[Optional[str]] = mapped_column(String(8), nullable=True)
-    duel_35: Mapped[Optional[str]] = mapped_column(String(8), nullable=True)
-    duel_36: Mapped[Optional[str]] = mapped_column(String(8), nullable=True)
-    duel_37: Mapped[Optional[str]] = mapped_column(String(8), nullable=True)
-    duel_38: Mapped[Optional[str]] = mapped_column(String(8), nullable=True)
-    duel_39: Mapped[Optional[str]] = mapped_column(String(8), nullable=True)
-    duel_40: Mapped[Optional[str]] = mapped_column(String(8), nullable=True)
-    duel_41: Mapped[Optional[str]] = mapped_column(String(8), nullable=True)
-    duel_42: Mapped[Optional[str]] = mapped_column(String(8), nullable=True)
-    world: Mapped[Optional[str]] = mapped_column(String(8), nullable=True)
-    event: Mapped[Optional[str]] = mapped_column(String(8), nullable=True)
-    dialog_0: Mapped[Optional[str]] = mapped_column(String(8), nullable=True)
-    dialog_1: Mapped[Optional[str]] = mapped_column(String(8), nullable=True)
-    dialog_2: Mapped[Optional[str]] = mapped_column(String(8), nullable=True)
-    dialog_3: Mapped[Optional[str]] = mapped_column(String(8), nullable=True)
-    dialog_4: Mapped[Optional[str]] = mapped_column(String(8), nullable=True)
-    dialog_5: Mapped[Optional[str]] = mapped_column(String(8), nullable=True)
-    dialog_6: Mapped[Optional[str]] = mapped_column(String(8), nullable=True)
-    dialog_7: Mapped[Optional[str]] = mapped_column(String(8), nullable=True)
-    dialog_8: Mapped[Optional[str]] = mapped_column(String(8), nullable=True)
-    dialog_9: Mapped[Optional[str]] = mapped_column(String(8), nullable=True)
-    dialog_10: Mapped[Optional[str]] = mapped_column(String(8), nullable=True)
-    dialog_11: Mapped[Optional[str]] = mapped_column(String(8), nullable=True)
-    dialog_12: Mapped[Optional[str]] = mapped_column(String(8), nullable=True)
-    dialog_13: Mapped[Optional[str]] = mapped_column(String(8), nullable=True)
-    dialog_14: Mapped[Optional[str]] = mapped_column(String(8), nullable=True)
-    dialog_15: Mapped[Optional[str]] = mapped_column(String(8), nullable=True)
-    dialog_16: Mapped[Optional[str]] = mapped_column(String(8), nullable=True)
-    dialog_17: Mapped[Optional[str]] = mapped_column(String(8), nullable=True)
-    dialog_18: Mapped[Optional[str]] = mapped_column(String(8), nullable=True)
-    dialog_19: Mapped[Optional[str]] = mapped_column(String(8), nullable=True)
-    dialog_20: Mapped[Optional[str]] = mapped_column(String(8), nullable=True)
-    dialog_21: Mapped[Optional[str]] = mapped_column(String(8), nullable=True)
-    dialog_22: Mapped[Optional[str]] = mapped_column(String(8), nullable=True)
-    dialog_23: Mapped[Optional[str]] = mapped_column(String(8), nullable=True)
-    dialog_24: Mapped[Optional[str]] = mapped_column(String(8), nullable=True)
-    dialog_25: Mapped[Optional[str]] = mapped_column(String(8), nullable=True)
-    dialog_26: Mapped[Optional[str]] = mapped_column(String(8), nullable=True)
-    dialog_31: Mapped[Optional[str]] = mapped_column(String(8), nullable=True)
-    dialog_32: Mapped[Optional[str]] = mapped_column(String(8), nullable=True)
-    dialog_33: Mapped[Optional[str]] = mapped_column(String(8), nullable=True)
-    dialog_34: Mapped[Optional[str]] = mapped_column(String(8), nullable=True)
-    dialog_35: Mapped[Optional[str]] = mapped_column(String(8), nullable=True)
-    dialog_36: Mapped[Optional[str]] = mapped_column(String(8), nullable=True)
-    dialog_37: Mapped[Optional[str]] = mapped_column(String(8), nullable=True)
-    dialog_38: Mapped[Optional[str]] = mapped_column(String(8), nullable=True)
-    dialog_39: Mapped[Optional[str]] = mapped_column(String(8), nullable=True)
-    dialog_40: Mapped[Optional[str]] = mapped_column(String(8), nullable=True)
-    dialog_41: Mapped[Optional[str]] = mapped_column(String(8), nullable=True)
-    dialog_42: Mapped[Optional[str]] = mapped_column(String(8), nullable=True)
-    dialog_43: Mapped[Optional[str]] = mapped_column(String(8), nullable=True)
-    dialog_44: Mapped[Optional[str]] = mapped_column(String(8), nullable=True)
-    dialog_45: Mapped[Optional[str]] = mapped_column(String(8), nullable=True)
-    selected_legacy: Mapped[Optional[str]] = mapped_column(String(8), nullable=True)
-    selected_new: Mapped[Optional[str]] = mapped_column(String(8), nullable=True)
-    home_victory: Mapped[Optional[str]] = mapped_column(String(8), nullable=True)
-    home_special: Mapped[Optional[str]] = mapped_column(String(8), nullable=True)
-    name_big: Mapped[Optional[str]] = mapped_column(String(8), nullable=True)
-    name_small: Mapped[Optional[str]] = mapped_column(String(8), nullable=True)
-    cutin: Mapped[Optional[str]] = mapped_column(String(8), nullable=True)
-    victory: Mapped[Optional[str]] = mapped_column(String(8), nullable=True)
-    defeat: Mapped[Optional[str]] = mapped_column(String(8), nullable=True)
-    versus: Mapped[Optional[str]] = mapped_column(String(8), nullable=True)
+    icon: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    select: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    duel_1: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    duel_2: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    duel_3: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    duel_4: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    duel_5: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    duel_6: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    duel_7: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    duel_8: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    duel_9: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    duel_10: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    duel_11: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    duel_12: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    duel_13: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    duel_14: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    duel_15: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    duel_16: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    duel_17: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    duel_18: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    duel_19: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    duel_20: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    duel_31: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    duel_32: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    duel_33: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    duel_34: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    duel_35: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    duel_36: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    duel_37: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    duel_38: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    duel_39: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    duel_40: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    duel_41: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    duel_42: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    world: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    event: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    dialog_0: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    dialog_1: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    dialog_2: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    dialog_3: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    dialog_4: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    dialog_5: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    dialog_6: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    dialog_7: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    dialog_8: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    dialog_9: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    dialog_10: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    dialog_11: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    dialog_12: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    dialog_13: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    dialog_14: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    dialog_15: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    dialog_16: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    dialog_17: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    dialog_18: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    dialog_19: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    dialog_20: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    dialog_21: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    dialog_22: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    dialog_23: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    dialog_24: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    dialog_25: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    dialog_26: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    dialog_31: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    dialog_32: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    dialog_33: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    dialog_34: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    dialog_35: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    dialog_36: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    dialog_37: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    dialog_38: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    dialog_39: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    dialog_40: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    dialog_41: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    dialog_42: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    dialog_43: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    dialog_44: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    dialog_45: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    selected_legacy: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    selected_new: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    home_victory: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    home_special: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    name_big: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    name_small: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    cutin: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    victory: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    defeat: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    versus: Mapped[str | None] = mapped_column(String(8), nullable=True)
 
     thumb: QIcon = QIcon()
 
-    def get_asset_bundle(self, asset_type: CharaAssetType) -> Optional[str]:
+    def get_asset_bundle(self, asset_type: CharaAssetType) -> str | None:
         """Get the bundle for a specific asset type."""
         attr_name = CharacterAssets._ENUM_TO_ATTR.get(asset_type)
         if attr_name:

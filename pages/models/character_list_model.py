@@ -1,9 +1,9 @@
 from textwrap import shorten
 from threading import Thread
+from typing import override
 
 from PySide6.QtGui import Qt
 from sqlalchemy import String, cast, func
-from typing_extensions import override
 
 from database.models import CharacterModel
 from database.objects import session
@@ -12,7 +12,6 @@ from unity.unity_utils import fetch_bundle_thumb
 
 
 class CharacterListModel(AssetListModel):
-
     def __init__(self, characters=None):
         super().__init__(characters or [], CharacterModel)
         self.show_favorites = False
@@ -28,7 +27,7 @@ class CharacterListModel(AssetListModel):
             query = query.filter(self.db_model.series == self.series_filter)
 
         if self.show_favorites:
-            query = query.filter(self.db_model.favorite == True)
+            query = query.filter(self.db_model.favorite.is_(True))
 
         display_name = func.coalesce(
             func.nullif(self.db_model.name, ""),
@@ -47,7 +46,6 @@ class CharacterListModel(AssetListModel):
 
         self._fallback_thumb = None
         if any(not character.icon for character in self.assets):
-            # 9998 is the generic "???" character; look it up outside list filters.
             fallback_icon = (
                 session.query(self.db_model.icon)
                 .filter(self.db_model.konami_id == 9998)
@@ -75,7 +73,9 @@ class CharacterListModel(AssetListModel):
         if role == Qt.DisplayRole:
             asset = self.assets[index.row()]
             return shorten(
-                asset.name or f"Character {asset.konami_id}", width=20, placeholder="..."
+                asset.name or f"Character {asset.konami_id}",
+                width=20,
+                placeholder="...",
             )
 
         if role == Qt.ToolTipRole:

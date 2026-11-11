@@ -7,14 +7,13 @@ image previews, and saves PNGs. It also captures the character asset dialog.
 ## Prepare and run
 
 Configure a downloaded Duel Links account in the app and click **Check** to populate
-`database.db`. Close the game. From the project root, install the runtime dependencies
+`database.db`. Close the game. From the project root, sync the runtime dependencies
 and rebuild generated Qt modules before capturing:
 
-```powershell
-.\.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-.\build_qt.ps1
-python capture_docs.py
+```bash
+uv sync
+uv run floo-build-qt
+uv run floo-capture
 ```
 
 The default command replaces `config.png`, `sleeve.png`, `card.png`, `field.png`,
@@ -28,12 +27,12 @@ the operating system's title bar or desktop. Qt captures at the screen's pixel d
 
 ## Choose pages and output
 
-```powershell
-python capture_docs.py --pages character --character-search "Yugi"
-python capture_docs.py --pages card sleeve --card-search "Blue-Eyes"
-python capture_docs.py --database local/development.db --output build/review-captures
-python capture_docs.py --windowed --width 1600 --height 1000
-python capture_docs.py --offscreen --output build/headless-captures
+```bash
+uv run floo-capture -- --pages character --character-search "Yugi"
+uv run floo-capture -- --pages card sleeve --card-search "Blue-Eyes"
+uv run floo-capture -- --database local/development.db --output build/review-captures
+uv run floo-capture -- --windowed --width 1600 --height 1000
+uv run floo-capture -- --offscreen --output build/headless-captures
 ```
 
 `--pages` accepts `config`, `sleeve`, `card`, `field`, `character`, and `backups`.
@@ -49,8 +48,8 @@ previews. Earlier captures can remain after a failure.
 platform fonts and styles can differ from normal Windows captures.
 Configuration and Backups can be captured without a game path:
 
-```powershell
-python capture_docs.py --pages config backups --offscreen
+```bash
+uv run floo-capture -- --pages config backups --offscreen
 ```
 
 ## Isolation and review
@@ -73,11 +72,11 @@ same artwork; no mod is applied. Example images are removed with the temporary c
 
 To review separately before replacing documentation pictures:
 
-```powershell
-python capture_docs.py --output build/review-captures
+```bash
+uv run floo-capture -- --output build/review-captures
 # Inspect the PNGs, then copy the reviewed pictures.
-Copy-Item build/review-captures/*.png docs/assets/ui/
-python -m mkdocs build --strict --site-dir build/docs-preview
+cp build/review-captures/*.png docs/assets/ui/
+uv run --group docs mkdocs build --strict --site-dir build/docs-preview
 ```
 
 When `--output` is supplied, its manifest is saved alongside its PNGs.

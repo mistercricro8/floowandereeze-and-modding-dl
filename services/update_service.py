@@ -4,27 +4,27 @@ from pathlib import Path
 
 import pandas as pd
 import requests
-from requests.exceptions import RequestException, Timeout, HTTPError
-from pandas import read_parquet, DataFrame
+from pandas import DataFrame, read_parquet
 from pandas.errors import EmptyDataError
+from requests.exceptions import HTTPError, RequestException, Timeout
 
 from database.models import (
     AppConfig,
-    SleeveModel,
     CardModel,
-    FieldModel,
     CharacterModel,
+    FieldModel,
+    SleeveModel,
 )
 from database.objects import DBsession
 from util.metadata_source import (
-    DEFAULT_METADATA_REPOSITORY,
     DEFAULT_METADATA_BRANCH,
-    normalize_metadata_source,
+    DEFAULT_METADATA_REPOSITORY,
     is_local_metadata_source,
+    normalize_metadata_source,
 )
 
 
-def _configured_source():
+def _configured_source() -> tuple[str, str]:
     """Read saved settings with a separate session for each update worker."""
     with DBsession() as local_session:
         config = local_session.query(AppConfig).first()
@@ -34,8 +34,14 @@ def _configured_source():
         )
 
 
-def _local_metadata_file(path, owner=None, repo=None, branch=None):
-    """Read working-tree files directly unless a GitHub source was explicitly supplied."""
+def _local_metadata_file(
+    path: str,
+    owner: str | None = None,
+    repo: str | None = None,
+    branch: str | None = None,
+) -> Path | None:
+    """Read working-tree files directly unless a GitHub source was
+    explicitly supplied."""
     if any(value is not None for value in (owner, repo, branch)):
         return None
     repository, selected_branch = _configured_source()
@@ -49,7 +55,11 @@ def _local_metadata_file(path, owner=None, repo=None, branch=None):
     return file
 
 
-def _github_source(owner=None, repo=None, branch=None):
+def _github_source(
+    owner: str | None = None,
+    repo: str | None = None,
+    branch: str | None = None,
+) -> tuple[str, str, dict[str, str]]:
     """Resolve saved GitHub settings or explicit overrides."""
     repository, selected_branch = _configured_source()
     if is_local_metadata_source(repository):
@@ -67,7 +77,12 @@ def _github_source(owner=None, repo=None, branch=None):
     return owner, repo, {"ref": branch} if branch else {}
 
 
-def get_github_raw_file(path: str, owner=None, repo=None, branch=None) -> str:
+def get_github_raw_file(
+    path: str,
+    owner: str | None = None,
+    repo: str | None = None,
+    branch: str | None = None,
+) -> str:
     """
     Read a text file from the saved local checkout or GitHub source.
 
@@ -87,26 +102,21 @@ def get_github_raw_file(path: str, owner=None, repo=None, branch=None) -> str:
     if local_file is not None:
         return local_file.read_text(encoding="utf-8")
     owner, repo, params = _github_source(owner, repo, branch)
-    # GitHub API URL for repository contents
     url = f"https://api.github.com/repos/{owner}/{repo}/contents/{path}"
 
-    # Headers for authentication
     headers = {"Accept": "application/vnd.github.v3+json"}
 
     try:
-        # Send a GET request to fetch file metadata
         response = requests.get(url, headers=headers, params=params, timeout=10)
-        response.raise_for_status()  # Raises HTTPError for bad responses
+        response.raise_for_status()
 
         file_data = response.json()
 
-        # Extract the download URL from the response
         if "download_url" not in file_data:
             raise ValueError("No download URL found in the response.")
 
         raw_url = file_data["download_url"]
 
-        # Send a second GET request to fetch the raw file content
         raw_response = requests.get(raw_url, headers=headers, timeout=10)
         raw_response.raise_for_status()
 
@@ -141,20 +151,16 @@ def get_github_parquet_file(path: str, owner=None, repo=None, branch=None) -> Da
     if local_file is not None:
         return read_parquet(local_file)
     owner, repo, params = _github_source(owner, repo, branch)
-    # GitHub API URL for repository contents
     url = f"https://api.github.com/repos/{owner}/{repo}/contents/{path}"
 
-    # Headers for authentication
     headers = {"Accept": "application/vnd.github.v3+json"}
 
     try:
-        # Send a GET request to fetch file metadata
         response = requests.get(url, headers=headers, params=params, timeout=10)
         response.raise_for_status()
 
         file_data = response.json()
 
-        # Extract the download URL from the response
         if "download_url" not in file_data:
             raise ValueError("No download URL found in the response.")
 
@@ -188,7 +194,6 @@ def update_sleeves() -> None:
     2. Deletes all existing sleeves from the database
     3. Adds all sleeves from the remote data
     """
-    # Create a new session for this thread
     local_session = DBsession()
     try:
         remote_sleeves = get_github_parquet_file("data/sleeves.parquet")
@@ -226,9 +231,9 @@ def update_cards() -> None:
     This function:
     1. Fetches the latest cards data from the remote parquet file
     2. Deletes all existing cards from the database
-    3. Adds all cards from the remote data with their bundle, name, description, and data_index
+    3. Adds all cards from the remote data with their bundle, name,
+    description, and data_index
     """
-    # Create a new session for this thread
     local_session = DBsession()
     try:
         remote_cards = get_github_parquet_file("data/cards.parquet")
@@ -260,9 +265,9 @@ def update_fields() -> None:
     This function:
     1. Fetches the latest fields data from the remote parquet file
     2. Deletes all existing fields from the database
-    3. Adds all fields from the remote data with their bundle, flipped, and bottom properties
+    3. Adds all fields from the remote data with their bundle, flipped,
+    and bottom properties
     """
-    # Create a new session for this thread
     local_session = DBsession()
     try:
         remote_fields = get_github_parquet_file("data/fields.parquet")
@@ -294,15 +299,15 @@ def update_fields() -> None:
 
 def update_characters() -> None:
     """
-    Updates the characters in the database by completely replacing all existing characters
-    with the latest data from the remote source.
+    Updates the characters in the database by completely replacing all existing
+    characters with the latest data from the remote source.
 
     This function:
     1. Fetches the latest characters data from the remote parquet file
     2. Deletes all existing characters from the database
-    3. Adds all characters from the remote data with their name, konami_id, series, and asset bundles
+    3. Adds all characters from the remote data with their name, konami_id,
+    series, and asset bundles
     """
-    # Create a new session for this thread
     local_session = DBsession()
     try:
         remote_characters = get_github_parquet_file("data/characters.parquet")
@@ -313,7 +318,6 @@ def update_characters() -> None:
             if pd.isnull(character_row["konami_id"]):
                 continue
 
-            # Create new character model
             character = CharacterModel(
                 name=asset_label(character_row),
                 konami_id=character_row["konami_id"],
@@ -324,8 +328,6 @@ def update_characters() -> None:
                 ),
             )
 
-            # Set asset bundles for each available asset type
-            # The parquet file should have columns matching the CharacterAssets attribute names
             from database.models import CharacterAssets
 
             for attr_name in CharacterAssets._ENUM_TO_ATTR.values():
