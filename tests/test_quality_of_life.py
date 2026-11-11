@@ -11,6 +11,8 @@ from unittest.mock import MagicMock, patch
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 _WORKSPACE = Path.cwd()
 _TEMP = tempfile.TemporaryDirectory()
+os.environ["FLOOWANDEREEZE_DATA_DIR"] = _TEMP.name
+os.environ["FLOOWANDEREEZE_CONFIG_DIR"] = _TEMP.name
 os.chdir(_TEMP.name)
 
 from PySide6 import QtCore, QtGui, QtWidgets
@@ -48,6 +50,8 @@ def tearDownModule():
     engine.dispose()
     os.chdir(_WORKSPACE)
     _TEMP.cleanup()
+    os.environ.pop("FLOOWANDEREEZE_DATA_DIR", None)
+    os.environ.pop("FLOOWANDEREEZE_CONFIG_DIR", None)
 
 
 class QualityOfLifeTests(unittest.TestCase):
@@ -732,8 +736,9 @@ class QualityOfLifeTests(unittest.TestCase):
         from PIL import Image
 
         from services.character_service import CharacterService
+        from util.paths import get_backups_dir
 
-        backup = Path("backups/characters/original-layout.png")
+        backup = get_backups_dir() / "characters" / "original-layout.png"
         backup.parent.mkdir(parents=True, exist_ok=True)
         self.addCleanup(lambda: backup.unlink(missing_ok=True))
         original = Image.new("RGBA", (120, 100))
@@ -1417,3 +1422,38 @@ class QualityOfLifeTests(unittest.TestCase):
             page._set_game_path(str(account))
             check.assert_called_once()
         page.close()
+
+    def test_clearing_and_setting_game_path_does_not_fail_not_null_or_poison_session(self):
+        from pages.config import Config
+
+        page = Config()
+        page.show()
+        page._set_game_path("")
+        self.assertEqual(APP_CONFIG.game_path, "")
+        self.assertNotEqual(page.gamePathErrorLabel.text(), "")
+
+        install = Path("valid-reconfigured-game")
+        (install / "dlpc_Data").mkdir(exist_ok=True, parents=True)
+        (install / "dlpc_Data/data.unity3d").touch()
+        account = install / "LocalData/87654321"
+        account.mkdir(exist_ok=True, parents=True)
+
+        with (
+            patch("pages.config.notify"),
+            patch.object(page, "_check_update"),
+        ):
+            page._set_game_path(str(account))
+            self.assertEqual(APP_CONFIG.game_path, str(account.resolve()))
+            self.assertEqual(page.gamePathErrorLabel.text(), "")
+        page.close()
+
+    def test_inline_alert_attached_to_root_outside_scroll_area(self):
+        from pages.card import Card
+
+        card_page = Card()
+        self.assertIsNotNone(card_page.inlineAlert)
+        self.assertEqual(card_page.inlineAlert.parent(), card_page)
+        self.assertNotEqual(
+            card_page.inlineAlert.parent(), card_page.responsive_editor.scroll.widget()
+        )
+        card_page.close()

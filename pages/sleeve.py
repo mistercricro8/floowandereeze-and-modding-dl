@@ -27,6 +27,7 @@ from util.constants import (
     IMAGE_FILTER,
 )
 from util.image_utils import slugify
+from util.paths import get_backups_dir, get_bundles_dir, get_images_dir
 from util.ui_util import (
     format_actionable_error,
     open_in_file_manager,
@@ -154,7 +155,7 @@ class Sleeve(QtWidgets.QWidget, Ui_Sleeve):
         has_disk_backup = False
         if has_sleeve and self.selected.medium_bundle:
             backup_path = (
-                Path("backups/sleeves") / f"{slugify(self.selected.medium_bundle)}.png"
+                get_backups_dir() / "sleeves" / f"{slugify(self.selected.medium_bundle)}.png"
             )
             has_disk_backup = backup_path.is_file()
 
@@ -459,7 +460,7 @@ class Sleeve(QtWidgets.QWidget, Ui_Sleeve):
         if not self.selected:
             return
         backup_path = (
-            Path("backups/sleeves") / f"{slugify(self.selected.medium_bundle)}.png"
+            get_backups_dir() / "sleeves" / f"{slugify(self.selected.medium_bundle)}.png"
         )
         status_text = (
             "Backup: Saved"
@@ -516,7 +517,7 @@ class Sleeve(QtWidgets.QWidget, Ui_Sleeve):
         QGuiApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
         try:
             self.service.copy_bundle()
-            dest = Path("bundles/sleeves") / self.service.bundle
+            dest = get_bundles_dir() / "sleeves" / self.service.bundle
             notify(
                 self,
                 "success",
@@ -544,7 +545,7 @@ class Sleeve(QtWidgets.QWidget, Ui_Sleeve):
         QGuiApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
         try:
             self.service.extract_texture(self.service.bundle)
-            dest = Path("images/sleeves") / f"{slugify(self.service.bundle)}.png"
+            dest = get_images_dir() / "sleeves" / f"{slugify(self.service.bundle)}.png"
             notify(
                 self,
                 "success",
@@ -581,7 +582,7 @@ class Sleeve(QtWidgets.QWidget, Ui_Sleeve):
         for bundle in bundles:
             if not bundle:
                 continue
-            backup_path = Path("backups/sleeves") / f"{slugify(bundle)}.png"
+            backup_path = get_backups_dir() / "sleeves" / f"{slugify(bundle)}.png"
             if not backup_path.is_file():
                 try:
                     self.service.bundle = bundle

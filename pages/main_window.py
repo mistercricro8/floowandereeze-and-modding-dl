@@ -19,7 +19,9 @@ from pages.ui.main_window import Ui_MainWindow
 from services.update_service import metadata_tables_empty
 from util.constants import APP_CONFIG, BG_TEMPLATE
 from util.game_discovery import normalize_game_path
+from util.paths import check_and_migrate_legacy_data
 from util.python_utils import is_valid_game_path
+from widgets.inline_alert import notify
 
 logger = logging.getLogger(__name__)
 
@@ -58,6 +60,8 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         geometry = self._window_settings.value("window/geometry")
         if geometry:
             self.restoreGeometry(geometry)
+        if migration_msg := check_and_migrate_legacy_data():
+            notify(self.config_page, "info", "Storage Migration", migration_msg)
         self.show()
 
     def _load_pages(self) -> None:

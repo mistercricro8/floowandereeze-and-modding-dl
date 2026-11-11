@@ -7,8 +7,8 @@ Yu-Gi-Oh! Duel Links.
 """
 
 from abc import ABC, abstractmethod
-from os import makedirs
 from os.path import isfile, join
+from pathlib import Path
 from shutil import copyfile
 
 from UnityPy import load as unity_load
@@ -16,6 +16,7 @@ from UnityPy import load as unity_load
 from unity.unity_utils import prepare_environment
 from util.constants import APP_CONFIG
 from util.image_utils import slugify
+from util.paths import get_backups_dir, get_bundles_dir, get_images_dir
 
 
 class UnityService(ABC):
@@ -62,7 +63,20 @@ class UnityService(ABC):
         """
         self.extract_asset_texture(name, "backups", miss=miss)
 
-    def extract_asset_texture(self, name: str, folder: str, miss=False) -> None:
+    def _resolve_folder_root(self, folder: str | Path) -> Path:
+        if str(folder) == "images":
+            return get_images_dir()
+        if str(folder) == "backups":
+            return get_backups_dir()
+        if str(folder) == "bundles":
+            return get_bundles_dir()
+        return Path(folder)
+
+    def _process_extracted_image(self, image):
+        """Hook for subclasses to post-process extracted textures before saving."""
+        return image
+
+    def extract_asset_texture(self, name: str, folder: str | Path, miss=False) -> None:
         """
         Extracts a texture from a Unity bundle.
 
@@ -83,10 +97,12 @@ class UnityService(ABC):
             if obj.type.name == "Texture2D":
                 data = obj.read()
 
-                makedirs(join(folder, self.subfolder), exist_ok=True)
-                dest = join(folder, self.subfolder, slugify(name) + ".png")
+                target_dir = self._resolve_folder_root(folder) / self.subfolder
+                target_dir.mkdir(parents=True, exist_ok=True)
+                dest = target_dir / f"{slugify(name)}.png"
 
-                data.image.save(dest)
+                img = self._process_extracted_image(data.image)
+                img.save(str(dest))
                 return
 
         if not miss:
@@ -101,13 +117,13 @@ class UnityService(ABC):
         :return: A boolean value indicating if the backup was restored successfully.
         """
 
-        backup_path = join(
-            "backups", self.subfolder, f"{backup_name or self.bundle}.png"
+        backup_path = (
+            get_backups_dir() / self.subfolder / f"{backup_name or self.bundle}.png"
         )
-        if isfile(backup_path):
+        if backup_path.is_file():
             current_image = self.image_path
             current_crop = self.crop_rect
-            self.image_path = backup_path
+            self.image_path = str(backup_path)
             self.crop_rect = None
             self.replace_bundle()
             self.image_path = current_image
@@ -121,7 +137,7 @@ class UnityService(ABC):
         """
         self.create_bundle_copy("bundles")
 
-    def create_bundle_copy(self, folder="bundles") -> None:
+    def create_bundle_copy(self, folder: str | Path = "bundles") -> None:
         """
         Creates a copy of the current bundle in the specified folder.
 
@@ -129,9 +145,10 @@ class UnityService(ABC):
         :return: None
         """
 
-        makedirs(join(folder, self.subfolder), exist_ok=True)
+        target_dir = self._resolve_folder_root(folder) / self.subfolder
+        target_dir.mkdir(parents=True, exist_ok=True)
 
         copyfile(
             join(APP_CONFIG.game_path, self.bundle[:2], self.bundle),
-            join(folder, self.subfolder, self.bundle),
+            str(target_dir / self.bundle),
         )

@@ -13,6 +13,7 @@ from services.unity_service import UnityService
 from unity.unity_utils import get_configured_packer, prepare_environment
 from util.constants import APP_CONFIG
 from util.image_utils import content_bounds, convert_image, crop_to_rect, slugify
+from util.paths import get_backups_dir
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +33,7 @@ class CharacterService(UnityService):
                 return tuple(layout.bounds)
 
             bounds = content_bounds(image)
-            backup = Path("backups") / self.subfolder / f"{slugify(bundle)}.png"
+            backup = get_backups_dir() / self.subfolder / f"{slugify(bundle)}.png"
             if backup.is_file():
                 with Image.open(backup) as original:
                     if original.size == image.size:
@@ -189,8 +190,12 @@ class CharacterService(UnityService):
                         logger.warning("Error processing sprite: %s", e)
                         continue
 
+        target_file = getattr(env, "file", None)
+        if target_file is None or not hasattr(target_file, "save"):
+            raise ValueError(f"Game file {self.bundle!r} could not be saved as a Unity bundle.")
+        saved_bytes = target_file.save(packer=get_configured_packer(APP_CONFIG))
         with open(f_path, "wb") as f:
-            f.write(env.file.save(packer=get_configured_packer(APP_CONFIG)))
+            f.write(saved_bytes)
 
     def get_series_list(self) -> list[str]:
         """Get unique list of character series for filtering."""

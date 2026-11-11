@@ -1,4 +1,4 @@
-from os.path import isfile, join
+from os.path import getsize, isfile, join
 
 from PIL import Image
 from PIL.ImageQt import ImageQt

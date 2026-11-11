@@ -27,6 +27,7 @@ from util.constants import (
     IMAGE_FILTER,
 )
 from util.image_utils import slugify
+from util.paths import get_backups_dir, get_bundles_dir, get_images_dir
 from util.ui_util import (
     format_actionable_error,
     open_in_file_manager,
@@ -144,7 +145,7 @@ class Field(QtWidgets.QWidget, Ui_Field):
         has_disk_backup = False
         if has_field and getattr(self.selected, "medium_bundle", None):
             backup_path = (
-                Path("backups/fields") / f"{slugify(self.selected.medium_bundle)}.png"
+                get_backups_dir() / "fields" / f"{slugify(self.selected.medium_bundle)}.png"
             )
             has_disk_backup = backup_path.is_file()
 
@@ -334,7 +335,7 @@ class Field(QtWidgets.QWidget, Ui_Field):
         if not self.selected:
             return
         backup_path = (
-            Path("backups/fields") / f"{slugify(self.selected.medium_bundle)}.png"
+            get_backups_dir() / "fields" / f"{slugify(self.selected.medium_bundle)}.png"
         )
         status_text = (
             "Backup: Saved"
@@ -445,7 +446,7 @@ class Field(QtWidgets.QWidget, Ui_Field):
         QGuiApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
         try:
             self.service.extract_texture(self.service.bundle)
-            dest = Path("images/fields") / f"{slugify(self.service.bundle)}.png"
+            dest = get_images_dir() / "fields" / f"{slugify(self.service.bundle)}.png"
             notify(
                 self,
                 "success",
@@ -473,7 +474,7 @@ class Field(QtWidgets.QWidget, Ui_Field):
         QGuiApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
         try:
             self.service.copy_bundle()
-            dest = Path("bundles/fields") / self.service.bundle
+            dest = get_bundles_dir() / "fields" / self.service.bundle
             notify(
                 self,
                 "success",
@@ -515,7 +516,7 @@ class Field(QtWidgets.QWidget, Ui_Field):
                     if not bundle:
                         continue
                     backup = (
-                        Path("backups")
+                        get_backups_dir()
                         / self.service.subfolder
                         / f"{slugify(bundle)}.png"
                     )

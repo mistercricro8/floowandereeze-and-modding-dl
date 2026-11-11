@@ -48,7 +48,7 @@ class ResponsiveEditor(QtCore.QObject):
             else:
                 layout.addItem(item)
         root.addWidget(title.widget())
-        attach_inline_alert(page, layout)
+        attach_inline_alert(page, root)
         if key == "fields":
             page.horizontalLayout_6.setDirection(
                 QtWidgets.QBoxLayout.Direction.RightToLeft

@@ -8,6 +8,7 @@ from PySide6 import QtCore, QtWidgets
 from sqlalchemy.exc import SQLAlchemyError
 
 from services.backup_service import CATEGORY_LABELS, BackupService, sync_backup_flags
+from util.paths import get_backups_dir
 from util.ui_util import open_in_file_manager
 from widgets.inline_alert import attach_inline_alert, notify
 
@@ -264,7 +265,7 @@ class Backups(QtWidgets.QWidget):
         folder = (
             Path(self.service.root)
             if hasattr(self.service, "root")
-            else Path("backups")
+            else get_backups_dir()
         )
         folder.mkdir(parents=True, exist_ok=True)
         open_in_file_manager(folder)

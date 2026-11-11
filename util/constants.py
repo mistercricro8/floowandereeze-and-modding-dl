@@ -26,10 +26,12 @@ BG_TEMPLATE: str = """
         background-color: rgba(12, 12, 12, 0.7);
     }
 
-    .QPushButton {
-        border: 1px solid #121212;
+    QPushButton {
+        background-color: rgba(22, 27, 34, 0.85);
+        color: #e6edf3;
+        border: 1px solid rgba(240, 246, 252, 0.25);
         border-radius: 5px;
-        padding: 4px 10px;
+        padding: 4px 12px;
         min-height: 24px;
     }
 
@@ -37,12 +39,21 @@ BG_TEMPLATE: str = """
         background-color: rgba(12, 12, 12, 0.7);
     }
 
-    .QPushButton:hover {
-        border: 1px solid darkgreen;
+    QPushButton:hover {
+        background-color: rgba(33, 42, 53, 0.95);
+        border: 1px solid #58a6ff;
+        color: #ffffff;
     }
 
-    .QPushButton:disabled {
-        border: 1px solid #523000;
+    QPushButton:pressed {
+        background-color: rgba(20, 27, 36, 1.0);
+        border: 1px solid #1f6feb;
+    }
+
+    QPushButton:disabled {
+        background-color: rgba(18, 18, 18, 0.5);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        color: rgba(255, 255, 255, 0.35);
     }
 
     #toast-icon-widget, #toast-close-button {
@@ -71,9 +82,9 @@ IMAGE_EXTENSIONS: tuple[str, ...] = (".png", ".jpg", ".jpeg", ".bmp", ".gif")
 """
 
 FIT_MODE_BUTTON_STYLE: str = (
-    "QPushButton { border: 1px solid gray; padding: 3px 10px; border-radius: 3px; }"
-    "QPushButton:checked { background-color: #3a7cc1; color: white; "
-    "border-color: #2a6cb1; }"
+    "QPushButton { background-color: rgba(22, 27, 34, 0.85); border: 1px solid rgba(240, 246, 252, 0.25); color: #e6edf3; padding: 3px 10px; border-radius: 4px; }"
+    "QPushButton:hover { background-color: rgba(33, 42, 53, 0.95); border: 1px solid #58a6ff; color: #ffffff; }"
+    "QPushButton:checked { background-color: #1f6feb; color: white; border: 1px solid #58a6ff; font-weight: bold; }"
 )
 
 run_migrations()
@@ -86,4 +97,5 @@ APP_CONFIG: AppConfig = session.query(AppConfig).first()
 if not APP_CONFIG:
     new_app = AppConfig(game_path="", create_backup=True)
     session.add(new_app)
+    session.commit()
     APP_CONFIG = new_app

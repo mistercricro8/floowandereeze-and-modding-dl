@@ -242,6 +242,7 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "pillow" },
+    { name = "platformdirs" },
     { name = "pyarrow" },
     { name = "pyqt-toast-notification" },
     { name = "pyside6" },
@@ -266,6 +267,7 @@ docs = [
 [package.metadata]
 requires-dist = [
     { name = "pillow", specifier = ">=10.4.0" },
+    { name = "platformdirs", specifier = ">=4.0.0" },
     { name = "pyarrow", specifier = ">=17.0.0" },
     { name = "pyqt-toast-notification", specifier = ">=1.3.2" },
     { name = "pyside6", specifier = ">=6.7.2" },

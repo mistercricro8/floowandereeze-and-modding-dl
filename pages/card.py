@@ -30,6 +30,7 @@ from util.constants import (
 )
 from util.enums import CardArtCoordinates
 from util.image_utils import slugify
+from util.paths import get_backups_dir, get_bundles_dir, get_images_dir
 from util.ui_util import (
     format_actionable_error,
     open_in_file_manager,
@@ -156,7 +157,7 @@ class Card(QWidget, Ui_Card):
         has_disk_backup = False
         if has_card:
             bundle, _ = card_art_bundle(self.selected)
-            backup_path = Path("backups/cards") / f"{slugify(bundle)}.png"
+            backup_path = get_backups_dir() / "cards" / f"{slugify(bundle)}.png"
             has_disk_backup = backup_path.is_file()
 
         self.restoreButton.setEnabled(has_disk_backup)
@@ -450,7 +451,7 @@ class Card(QWidget, Ui_Card):
                     "Card Restored",
                     f"Restored '{self.selected.name}' to original game artwork.",
                 )
-                backup_path = Path("backups/cards") / f"{slugify(bundle)}.png"
+                backup_path = get_backups_dir() / "cards" / f"{slugify(bundle)}.png"
                 status_text = (
                     "Backup: Saved"
                     if backup_path.is_file()
@@ -504,7 +505,7 @@ class Card(QWidget, Ui_Card):
         self.service.bundle = bundle
         self.service.unity_file = self.selected.unity_file
 
-        backup_path = Path("backups/cards") / f"{slugify(bundle)}.png"
+        backup_path = get_backups_dir() / "cards" / f"{slugify(bundle)}.png"
         status_text = (
             "Backup: Saved"
             if backup_path.is_file()
@@ -551,7 +552,7 @@ class Card(QWidget, Ui_Card):
         QGuiApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
         try:
             self.service.copy_bundle()
-            dest = Path("bundles/cards") / self.service.bundle
+            dest = get_bundles_dir() / "cards" / self.service.bundle
             notify(
                 self,
                 "success",
@@ -581,7 +582,7 @@ class Card(QWidget, Ui_Card):
         QGuiApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
         try:
             self.service.extract_texture(self.service.bundle)
-            dest = Path("images/cards") / f"{slugify(self.service.bundle)}.png"
+            dest = get_images_dir() / "cards" / f"{slugify(self.service.bundle)}.png"
             notify(
                 self,
                 "success",
@@ -617,7 +618,7 @@ class Card(QWidget, Ui_Card):
             return
 
         bundle, coords = card_art_bundle(self.selected)
-        backup_path = Path("backups/cards") / f"{slugify(bundle)}.png"
+        backup_path = get_backups_dir() / "cards" / f"{slugify(bundle)}.png"
         if not backup_path.is_file():
             try:
                 self.service.create_backup(self.service.bundle)
@@ -650,7 +651,7 @@ class Card(QWidget, Ui_Card):
                 "Card Mod Applied",
                 f"Replaced artwork for '{self.selected.name}'. Original is backed up.",
             )
-            backup_path = Path("backups/cards") / f"{slugify(bundle)}.png"
+            backup_path = get_backups_dir() / "cards" / f"{slugify(bundle)}.png"
             status_text = (
                 "Backup: Saved"
                 if backup_path.is_file()

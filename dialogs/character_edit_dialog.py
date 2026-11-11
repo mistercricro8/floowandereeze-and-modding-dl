@@ -38,6 +38,7 @@ from util.constants import (
 )
 from util.enums import CharaAssetType
 from util.image_utils import slugify
+from util.paths import get_backups_dir, get_images_dir
 from util.ui_util import open_in_file_manager
 from widgets.crop_overlay_widget import CropOverlayWidget
 from widgets.inline_alert import attach_inline_alert, notify
@@ -694,7 +695,7 @@ class CharacterEditDialog(QDialog):
     def _extract_asset(self):
         """Extract every selected image to the characters folder."""
         self._run_asset_action("Image Extraction", self.service.extract_texture)
-        dest = Path("images/characters")
+        dest = get_images_dir() / "characters"
         if dest.is_dir():
             open_in_file_manager(dest)
 
@@ -714,7 +715,7 @@ class CharacterEditDialog(QDialog):
         def replace(bundle):
             if APP_CONFIG.create_backup:
                 backup = (
-                    Path("backups") / self.service.subfolder / f"{slugify(bundle)}.png"
+                    get_backups_dir() / self.service.subfolder / f"{slugify(bundle)}.png"
                 )
                 if not backup.is_file():
                     self.service.create_backup(bundle)

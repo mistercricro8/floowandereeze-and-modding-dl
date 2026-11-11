@@ -8,6 +8,8 @@ from pathlib import Path, PurePosixPath
 from tempfile import NamedTemporaryFile, TemporaryDirectory
 from zipfile import ZIP_DEFLATED, ZipFile
 
+from util.paths import get_backups_dir
+
 CATEGORY_LABELS = {
     "cards": "Cards",
     "sleeves": "Sleeves",
@@ -37,8 +39,8 @@ class BackupService:
     MAX_ARCHIVE_SIZE = 4 * 1024**3
     MAX_ARCHIVE_FILES = 100000
 
-    def __init__(self, root="backups"):
-        self.root = Path(root).resolve()
+    def __init__(self, root: str | Path | None = None):
+        self.root = get_backups_dir() if root is None else Path(root).resolve()
 
     @staticmethod
     def _validate_name(name):

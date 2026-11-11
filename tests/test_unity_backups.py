@@ -25,6 +25,10 @@ class UnityBackupTests(unittest.TestCase):
         folder = tempfile.TemporaryDirectory()
         self.addCleanup(folder.cleanup)
         self.addCleanup(os.chdir, previous)
+        os.environ["FLOOWANDEREEZE_DATA_DIR"] = folder.name
+        os.environ["FLOOWANDEREEZE_CONFIG_DIR"] = folder.name
+        self.addCleanup(lambda: os.environ.pop("FLOOWANDEREEZE_DATA_DIR", None))
+        self.addCleanup(lambda: os.environ.pop("FLOOWANDEREEZE_CONFIG_DIR", None))
         os.chdir(folder.name)
         self.root = Path(folder.name)
         prepare = patch(
@@ -433,6 +437,49 @@ class UnityBackupTests(unittest.TestCase):
         conn.close()
         self.assertIsNotNone(row)
         self.assertEqual(row[0], "lz4")
+
+    def test_card_crop_coordinates_for_extracted_texture(self):
+        service = CardService()
+        med_img = Image.new("RGBA", (256, 256), (10, 20, 30, 255))
+        cropped_med = service._process_extracted_image(med_img)
+        self.assertEqual(cropped_med.size, (193, 132))
+
+        large_img = Image.new("RGBA", (512, 512), (10, 20, 30, 255))
+        cropped_large = service._process_extracted_image(large_img)
+        self.assertEqual(cropped_large.size, (385, 265))
+
+        small_img = Image.new("RGBA", (128, 128), (10, 20, 30, 255))
+        cropped_small = service._process_extracted_image(small_img)
+        self.assertEqual(cropped_small.size, (96, 66))
+
+        other_img = Image.new("RGBA", (100, 100), (10, 20, 30, 255))
+        preserved = service._process_extracted_image(other_img)
+        self.assertEqual(preserved.size, (100, 100))
+
+    def test_card_restore_migrates_legacy_full_texture_backup(self):
+        service = CardService()
+        service.bundle = "card001"
+        backup_dir = self.root / "backups/cards"
+        backup_dir.mkdir(parents=True, exist_ok=True)
+        backup_file = backup_dir / "card001.png"
+
+        legacy_full = Image.new("RGBA", (256, 256), (1, 2, 3, 255))
+        legacy_full.save(backup_file)
+
+        observed_path = []
+
+        def fake_replace():
+            observed_path.append(service.image_path)
+
+        with patch.object(service, "replace_bundle", side_effect=fake_replace) as mock_replace:
+            restored = service.restore_asset()
+            self.assertTrue(restored)
+            mock_replace.assert_called_once()
+            self.assertEqual(observed_path, [str(backup_file)])
+            self.assertIsNone(service.image_path)
+
+        with Image.open(backup_file) as migrated:
+            self.assertEqual(migrated.size, (193, 132))
 
 
 if __name__ == "__main__":

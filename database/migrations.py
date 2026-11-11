@@ -5,7 +5,10 @@ when users update to a new version of the application.
 """
 
 import logging
+from pathlib import Path
 import sqlite3
+
+from util.paths import get_database_path
 
 logger = logging.getLogger(__name__)
 
@@ -16,7 +19,7 @@ def get_columns(cursor, table_name: str) -> list[str]:
     return [column[1] for column in cursor.fetchall()]
 
 
-def run_migrations(db_path: str = "database.db") -> None:
+def run_migrations(db_path: str | Path | None = None) -> None:
     """
     Run all necessary database migrations.
 
@@ -24,7 +27,8 @@ def run_migrations(db_path: str = "database.db") -> None:
     any missing migrations to bring it up to the latest version.
     """
     try:
-        conn = sqlite3.connect(db_path)
+        resolved_path = str(get_database_path() if db_path is None else db_path)
+        conn = sqlite3.connect(resolved_path)
         cursor = conn.cursor()
 
         columns = get_columns(cursor, "app_config")

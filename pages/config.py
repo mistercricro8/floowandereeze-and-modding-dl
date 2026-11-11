@@ -38,6 +38,7 @@ from util.metadata_source import (
     metadata_source_key,
     normalize_metadata_source,
 )
+from util.paths import get_backups_dir
 from util.python_utils import get_instances_of_subclasses, is_valid_game_path
 from widgets.inline_alert import attach_inline_alert, notify
 
@@ -128,14 +129,12 @@ class Config(QWidget, Ui_Config):
         count = 0
         try:
             for service, model in self._get_services_and_models():
-                backups_path = os.path.join("backups", service.subfolder)
+                backups_path = get_backups_dir() / service.subfolder
 
-                if os.path.exists(backups_path):
-                    for filename in os.listdir(backups_path):
-                        file_path = os.path.join(backups_path, filename)
-
-                        if os.path.isfile(file_path):
-                            service.bundle = filename.replace(".png", "")
+                if backups_path.exists():
+                    for file_path in backups_path.iterdir():
+                        if file_path.is_file() and file_path.suffix == ".png":
+                            service.bundle = file_path.stem
                             count += 1 if service.restore_asset() else 0
 
                 model.refresh()
@@ -160,12 +159,13 @@ class Config(QWidget, Ui_Config):
         count = 0
         try:
             for service, model in self._get_services_and_models():
-                backups_path = os.path.join("backups", service.subfolder)
+                backups_path = get_backups_dir() / service.subfolder
 
-                if os.path.exists(backups_path):
-                    for filename in os.listdir(backups_path):
-                        os.remove(os.path.join(backups_path, filename))
-                        count += 1
+                if backups_path.exists():
+                    for file_path in backups_path.iterdir():
+                        if file_path.is_file():
+                            file_path.unlink()
+                            count += 1
 
                 model.reset_backups()
 
@@ -399,9 +399,13 @@ class Config(QWidget, Ui_Config):
             self.gamePathErrorLabel.setText(err_msg)
             self.gamePathErrorLabel.setVisible(True)
             self._update_game_dependent_controls(False)
-            if APP_CONFIG.game_path is not None:
-                APP_CONFIG.game_path = None
-                session.commit()
+            if APP_CONFIG.game_path:
+                APP_CONFIG.game_path = ""
+                try:
+                    session.commit()
+                except Exception:
+                    session.rollback()
+                    raise
                 self.gamePathChanged.emit()
             logger.warning("Game path cleared or left empty.")
             return
@@ -447,13 +451,21 @@ class Config(QWidget, Ui_Config):
             self._update_game_dependent_controls(False)
             if APP_CONFIG.game_path != cleaned:
                 APP_CONFIG.game_path = cleaned
-                session.commit()
+                try:
+                    session.commit()
+                except Exception:
+                    session.rollback()
+                    raise
                 self.gamePathChanged.emit()
             logger.warning("Invalid game folder '%s': %s", cleaned, plain_err)
             return
 
         APP_CONFIG.game_path = normalized
-        session.commit()
+        try:
+            session.commit()
+        except Exception:
+            session.rollback()
+            raise
         self.gameLine.setText(normalized)
         self.gamePathErrorLabel.setText("")
         self.gamePathErrorLabel.setVisible(False)
