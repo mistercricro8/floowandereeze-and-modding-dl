@@ -4,17 +4,57 @@ This module provides functions for UI-related tasks like showing toasts
 and managing the application's color palette.
 """
 
+import logging
 from pathlib import Path
 
-from pyqttoast import Toast, ToastPreset
+from pyqttoast import Toast, ToastPosition, ToastPreset
 from PySide6.QtCore import Qt, QUrl
 from PySide6.QtGui import QColor, QDesktopServices, QPalette
 from PySide6.QtWidgets import QMessageBox, QWidget
+
+logger = logging.getLogger(__name__)
+
+
+def log_action(
+    logger_name: str,
+    level: int | str,
+    message: str,
+    exc: Exception | None = None,
+) -> None:
+    """
+    Log an application action or event without displaying popup dialogs.
+
+    Args:
+        logger_name: Target logger name (e.g. __name__ or module path).
+        level: Severity level (e.g. logging.INFO, logging.ERROR, or 'info', 'error').
+        message: Informational or diagnostic message to log.
+        exc: Optional exception to log with traceback.
+    """
+    log = logging.getLogger(logger_name)
+    if isinstance(level, str):
+        level_name = level.upper().strip()
+        numeric_level = (
+            logging.getLevelNamesMapping().get(level_name)
+            if hasattr(logging, "getLevelNamesMapping")
+            else getattr(logging, level_name, None)
+        )
+        if numeric_level is None or not isinstance(numeric_level, int):
+            raise ValueError(f"Invalid logging level name: '{level}'")
+    elif isinstance(level, int):
+        numeric_level = level
+    else:
+        raise TypeError(f"Expected level to be int or str, got {type(level).__name__}")
+
+    log.log(numeric_level, message, exc_info=exc)
 
 
 def show_toast(parent, title: str, text: str, preset: ToastPreset):
     """
     Show a toast notification to the user.
+
+    .. deprecated::
+        Deprecated: use `widgets.inline_alert.notify` instead of toast popups
+        to provide non-intrusive feedback without stealing window focus.
 
     Args:
         parent: The parent widget for the toast
@@ -22,12 +62,40 @@ def show_toast(parent, title: str, text: str, preset: ToastPreset):
         text: The main text content of the toast
         preset: The visual preset to apply to the toast
     """
-    toast = Toast(parent)
-    toast.setDuration(5000)
-    toast.setBorderRadius(3)
+    logger.warning("show_toast is deprecated; use widgets.inline_alert.notify instead")
+    target = parent.window() if hasattr(parent, "window") else parent
+    if target is not None:
+        Toast.setPositionRelativeToWidget(target)
+    Toast.setPosition(ToastPosition.BOTTOM_RIGHT)
+    Toast.setOffset(24, 24)
+
+    toast = Toast(target)
+    toast.applyPreset(preset)
     toast.setTitle(title)
     toast.setText(text)
-    toast.applyPreset(preset)
+    toast.setDuration(3500)
+    toast.setShowDurationBar(False)
+    toast.setShowCloseButton(False)
+    toast.setShowIconSeparator(False)
+    toast.setBorderRadius(6)
+    toast.setBackgroundColor(QColor(24, 24, 24, 240))
+    toast.setTitleColor(QColor(255, 255, 255))
+    toast.setTextColor(QColor(210, 210, 210))
+    toast.setStyleSheet(
+        """
+        #toast-icon-widget, #toast-close-button {
+            background: transparent;
+            border: none;
+            padding: 0px;
+            min-height: 0px;
+            min-width: 0px;
+        }
+        #toast-icon-widget:hover, #toast-close-button:hover {
+            background: transparent;
+            border: none;
+        }
+        """
+    )
     toast.show()
 
 
@@ -83,7 +151,16 @@ def show_actionable_error_dialog(
     resolution_hint: str,
     technical_details: str | None = None,
 ) -> None:
-    """Display a structured dialog explaining what failed and how to resolve it."""
+    """
+    Display a structured dialog explaining what failed and how to resolve it.
+
+    .. deprecated::
+        Deprecated: use `widgets.inline_alert.notify` to present errors inline
+        without opening modal dialog windows.
+    """
+    logger.warning(
+        "show_actionable_error_dialog is deprecated; use widgets.inline_alert.notify instead"
+    )
     valid_parent = parent if isinstance(parent, QWidget) else None
     box = QMessageBox(valid_parent)
     box.setIcon(QMessageBox.Icon.Warning)

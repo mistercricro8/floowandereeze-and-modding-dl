@@ -4,6 +4,7 @@ from PySide6 import QtCore, QtWidgets
 
 from widgets.asset_search import add_asset_search
 from widgets.grip_splitter import GripSplitter
+from widgets.inline_alert import attach_inline_alert
 
 
 class ResponsiveEditor(QtCore.QObject):
@@ -22,13 +23,15 @@ class ResponsiveEditor(QtCore.QObject):
         if header:
             root.removeItem(header)
             for index in reversed(range(header.count())):
-                if header.itemAt(index).spacerItem():
+                item_at = header.itemAt(index)
+                if item_at is not None and item_at.spacerItem():
                     header.takeAt(index)
             header.insertWidget(0, QtWidgets.QLabel("Results", page))
             if key == "cards":
                 header.setStretch(header.indexOf(page.searchEdit), 1)
                 page.searchButton.setText("Search")
                 page.searchButton.setAccessibleName("Search cards")
+                page.searchButton.setToolTip("Search cards by name.")
         title = root.takeAt(0)
         editor = QtWidgets.QWidget(page)
         layout = QtWidgets.QVBoxLayout(editor)
@@ -45,6 +48,7 @@ class ResponsiveEditor(QtCore.QObject):
             else:
                 layout.addItem(item)
         root.addWidget(title.widget())
+        attach_inline_alert(page, layout)
         if key == "fields":
             page.horizontalLayout_6.setDirection(
                 QtWidgets.QBoxLayout.Direction.RightToLeft
@@ -82,6 +86,26 @@ class ResponsiveEditor(QtCore.QObject):
         results_layout.addLayout(header)
         if search:
             add_asset_search(page, header, results_layout, key)
+            if hasattr(page, "searchEdit"):
+                if key == "fields":
+                    page.searchEdit.setPlaceholderText("Search playmats by name...")
+                    page.searchEdit.setToolTip(
+                        "Type a playmat name and press Enter to search."
+                    )
+                elif key == "sleeves":
+                    page.searchEdit.setPlaceholderText("Search sleeves by name...")
+                    page.searchEdit.setToolTip(
+                        "Type a sleeve name and press Enter to search."
+                    )
+                else:
+                    page.searchEdit.setToolTip("Type a name and press Enter to search.")
+            if hasattr(page, "searchButton"):
+                if key == "fields":
+                    page.searchButton.setToolTip("Search playmats by name.")
+                elif key == "sleeves":
+                    page.searchButton.setToolTip("Search sleeves by name.")
+                else:
+                    page.searchButton.setToolTip("Search items by name.")
         results_layout.addWidget(view, 1)
         results.setMinimumHeight(150)
         self.splitter = GripSplitter(QtCore.Qt.Orientation.Vertical, page)
@@ -106,6 +130,7 @@ class ResponsiveEditor(QtCore.QObject):
         view.setWordWrap(True)
         view.setSpacing(6)
         view.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        view.setToolTip("Select an item to view or edit.")
         icon = (
             QtCore.QSize(132, 66)
             if ratio > 1.5
