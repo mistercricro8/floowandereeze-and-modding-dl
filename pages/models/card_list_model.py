@@ -70,5 +70,10 @@ class CardListModel(AssetListModel):
                 replace_whitespace=False,
             )
 
+        if role == Qt.ToolTipRole:
+            card = self.assets[index.row()]
+            status = "\nBackup: Secured" if card.has_backup else ""
+            return f"{card.name}\nBundle: {card.large_bundle}{status}"
+
         if role == Qt.DecorationRole:
             return self.assets[index.row()].thumb

@@ -5,7 +5,7 @@ from pathlib import Path
 from PIL.ImageQt import fromqimage
 from pyqttoast import ToastPreset
 from PySide6.QtCore import QSize, Qt
-from PySide6.QtGui import QDragEnterEvent, QDropEvent, QIcon, QPixmap
+from PySide6.QtGui import QDragEnterEvent, QDropEvent, QGuiApplication, QIcon, QPixmap
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QButtonGroup,
@@ -38,7 +38,7 @@ from util.constants import (
 )
 from util.enums import CharaAssetType
 from util.image_utils import slugify
-from util.ui_util import show_toast
+from util.ui_util import open_in_file_manager, show_toast
 from widgets.crop_overlay_widget import CropOverlayWidget
 
 _BTN_STYLE = FIT_MODE_BUTTON_STYLE
@@ -163,10 +163,14 @@ class CharacterEditDialog(QDialog):
         image_layout = QHBoxLayout()
         self.image_path_edit = QLineEdit()
         self.image_path_edit.setReadOnly(True)
-        self.image_path_edit.setPlaceholderText("No image selected")
+        self.image_path_edit.setPlaceholderText(
+            "No replacement image selected (browse or drag & drop)..."
+        )
         image_layout.addWidget(self.image_path_edit)
 
-        self.select_image_btn = QPushButton("Select Image")
+        self.select_image_btn = QPushButton("Select Image...")
+        self.select_image_btn.setToolTip("Select replacement art (PNG, JPG)")
+        self.select_image_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         image_layout.addWidget(self.select_image_btn)
 
         right_layout.addLayout(image_layout)
@@ -245,14 +249,17 @@ class CharacterEditDialog(QDialog):
 
         self.extract_btn = QPushButton("Extract Asset")
         self.extract_btn.setEnabled(False)
+        self.extract_btn.setToolTip("Extract selected texture(s) to images/characters/")
         button_layout.addWidget(self.extract_btn)
 
         self.replace_btn = QPushButton("Replace Asset")
         self.replace_btn.setEnabled(False)
+        self.replace_btn.setToolTip("Replace selected texture(s) in game files")
         button_layout.addWidget(self.replace_btn)
 
         self.restore_btn = QPushButton("Restore Asset")
         self.restore_btn.setEnabled(False)
+        self.restore_btn.setToolTip("Restore selected texture(s) from backups")
         button_layout.addWidget(self.restore_btn)
 
         close_btn = QPushButton("Close")
@@ -312,6 +319,13 @@ class CharacterEditDialog(QDialog):
             self._mode_stack.setCurrentIndex(0)
 
         self._update_replace_button_state()
+        if not pixmap.isNull():
+            show_toast(
+                self,
+                "Image Selected",
+                f"Loaded {Path(path).name} ({pixmap.width()}×{pixmap.height()})",
+                ToastPreset.INFORMATION_DARK,
+            )
 
     def _connect_signals(self):
         """Connect UI signals to their handlers."""
@@ -502,6 +516,7 @@ class CharacterEditDialog(QDialog):
         succeeded = 0
         errors = []
         image_path, crop_rect = self.service.image_path, self.service.crop_rect
+        QGuiApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
         try:
             for bundle in bundles:
                 self.service.bundle = bundle
@@ -515,6 +530,7 @@ class CharacterEditDialog(QDialog):
                     self.service.crop_rect = crop_rect
         finally:
             self.service.bundle = self.selected_asset_bundle
+            QGuiApplication.restoreOverrideCursor()
 
         for item in self.asset_list.selectedItems():
             _, bundle = item.data(Qt.ItemDataRole.UserRole)
@@ -551,10 +567,19 @@ class CharacterEditDialog(QDialog):
     def _extract_asset(self):
         """Extract every selected asset to the characters folder."""
         self._run_asset_action("Character Extraction", self.service.extract_texture)
+        dest = Path("images/characters")
+        if dest.is_dir():
+            open_in_file_manager(dest)
 
     def _replace_asset(self):
         """Replace selected assets using the same image and crop area."""
         if not self.service.image_path:
+            show_toast(
+                self,
+                "Character Replacement",
+                "Please select a replacement image first.",
+                ToastPreset.WARNING_DARK,
+            )
             return
 
         def replace(bundle):

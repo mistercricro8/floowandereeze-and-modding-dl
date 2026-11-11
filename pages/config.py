@@ -1,10 +1,11 @@
 import os
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from datetime import datetime
+from pathlib import Path
 
 from pyqttoast import ToastPreset
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QDragEnterEvent, QDropEvent
+from PySide6.QtGui import QDragEnterEvent, QDropEvent, QGuiApplication
 from PySide6.QtWidgets import (
     QApplication,
     QFileDialog,
@@ -135,6 +136,7 @@ class Config(QWidget, Ui_Config):
 
     def _connect_callbacks(self):
         self.gameButton.clicked.connect(self._get_game_path)
+        self.gameLine.returnPressed.connect(self._manual_game_path_entered)
         self.updateButton.clicked.connect(self._check_update)
         self.saveMetadataSourceButton.clicked.connect(
             lambda: self._save_metadata_source()
@@ -167,6 +169,13 @@ class Config(QWidget, Ui_Config):
             packer = radio.objectName().replace("Button", "")
             if packer != APP_CONFIG.packer:
                 APP_CONFIG.packer = packer
+                session.commit()
+                show_toast(
+                    self,
+                    "Compression",
+                    f"Asset compression set to {packer.upper()}",
+                    ToastPreset.INFORMATION_DARK,
+                )
 
     def _set_background_mode(self, radio):
         if radio.isChecked():
@@ -176,10 +185,24 @@ class Config(QWidget, Ui_Config):
                 session.commit()
                 if APP_CONFIG.background_path:
                     self._apply_background_style(APP_CONFIG.background_path)
+                show_toast(
+                    self,
+                    "Background Mode",
+                    f"Background mode set to {mode.capitalize()}",
+                    ToastPreset.INFORMATION_DARK,
+                )
 
     def _set_mip_count(self):
-        APP_CONFIG.mipmap_count = self.mipBox.value()
-        session.commit()
+        val = self.mipBox.value()
+        if val != APP_CONFIG.mipmap_count:
+            APP_CONFIG.mipmap_count = val
+            session.commit()
+            show_toast(
+                self,
+                "Mipmaps",
+                f"Mipmap count set to {val}",
+                ToastPreset.INFORMATION_DARK,
+            )
 
     def _apply_background_style(self, file_path):
         """Apply background image with the selected mode (stretched or cropped)."""
@@ -223,12 +246,17 @@ class Config(QWidget, Ui_Config):
             self._set_game_path(folder)
 
     def _auto_detect_game_path(self):
-        paths = find_steam_duel_links_paths()
+        QGuiApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+        try:
+            paths = find_steam_duel_links_paths()
+        finally:
+            QGuiApplication.restoreOverrideCursor()
+
         if not paths:
             show_toast(
                 self,
                 "Game Path",
-                "No downloaded Duel Links accounts found in Steam. "
+                "No downloaded Duel Links accounts found in Steam or Proton prefixes. "
                 "Select the folder manually.",
                 ToastPreset.INFORMATION_DARK,
             )
@@ -237,19 +265,26 @@ class Config(QWidget, Ui_Config):
         if dialog.exec() and dialog.selected_game_path():
             self._set_game_path(dialog.selected_game_path())
 
+    def _manual_game_path_entered(self):
+        text = self.gameLine.text().strip()
+        if text and text != APP_CONFIG.game_path:
+            self._set_game_path(text)
+
     def _set_game_path(self, folder):
-        path = normalize_game_path(folder)
+        cleaned = str(folder).strip().strip("'\"")
+        path = normalize_game_path(cleaned)
         if not path:
+            _, msg = is_valid_game_path(cleaned)
             show_toast(
                 self,
                 "Game Path",
-                is_valid_game_path(folder)[1],
+                msg or "Invalid game folder.",
                 ToastPreset.WARNING_DARK,
             )
             return
         from pathlib import Path
 
-        selected = Path(folder)
+        selected = Path(cleaned)
         local_data = (
             selected if selected.name.lower() == "localdata" else selected / "LocalData"
         )
@@ -291,6 +326,18 @@ class Config(QWidget, Ui_Config):
         self.updateLine.setText(APP_CONFIG.version)
         self.backupBox.setChecked(APP_CONFIG.create_backup or False)
         self.mipBox.setValue(APP_CONFIG.mipmap_count or 10)
+        self.updateButton.setText("Check for Updates")
+        self.updateButton.setToolTip(
+            "Check remote repository for card/sleeve/field updates"
+        )
+        self.gameButton.setText("Browse...")
+        self.gameButton.setToolTip("Select Duel Links game data directory")
+        self.bgButton.setText("Browse...")
+        self.bgButton.setToolTip("Select custom background image")
+        self.bgResetButton.setToolTip("Reset app background to default")
+        self.autoDetectGameButton.setToolTip(
+            "Automatically search Steam libraries for Duel Links"
+        )
         for radio in [
             self.noneButton,
             self.lzmaButton,
@@ -354,7 +401,12 @@ class Config(QWidget, Ui_Config):
     def _check_update(self):
         if not self._save_metadata_source(notify=False):
             return
-        if APP_CONFIG.game_path and is_valid_game_path(APP_CONFIG.game_path)[0]:
+        valid, msg = (
+            is_valid_game_path(APP_CONFIG.game_path)
+            if APP_CONFIG.game_path
+            else (False, "Game Path must be set to update app")
+        )
+        if valid:
             try:
                 self._get_data()
             except Exception as error:
@@ -368,7 +420,7 @@ class Config(QWidget, Ui_Config):
             show_toast(
                 self,
                 "Update",
-                "Game Path must be set to update app",
+                msg or "Game Path must be set to update app",
                 ToastPreset.WARNING_DARK,
             )
 
@@ -438,15 +490,26 @@ class Config(QWidget, Ui_Config):
         file, _ = QFileDialog.getOpenFileUrl(self, "Select Image", "", IMAGE_FILTER)
 
         if file and file.url() != "":
-            APP_CONFIG.background_path = file.toLocalFile()
+            path = file.toLocalFile()
+            APP_CONFIG.background_path = path
             session.commit()
             self.bgLine.setText(APP_CONFIG.background_path)
-
-            self._apply_background_style(file.toLocalFile())
+            self._apply_background_style(path)
+            show_toast(
+                self,
+                "Background",
+                f"Background image updated to {Path(path).name}",
+                ToastPreset.SUCCESS_DARK,
+            )
 
     def _reset_background(self):
         APP_CONFIG.background_path = None
         session.commit()
         self.bgLine.setText("")
-
         self._apply_background_style(None)
+        show_toast(
+            self,
+            "Background",
+            "App background has been reset to default",
+            ToastPreset.INFORMATION_DARK,
+        )

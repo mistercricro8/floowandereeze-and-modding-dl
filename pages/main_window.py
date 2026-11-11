@@ -86,6 +86,13 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
             self.actioncharacter_button,
         ):
             action.setEnabled(valid)
+            if not valid:
+                action.setToolTip(
+                    f"{action.text()} (Disabled: Game path not configured. "
+                    "Set path in Configuration)"
+                )
+            else:
+                action.setToolTip(action.text())
         for _ in self._page_classes[1:]:
             self.mainStack.addWidget(QtWidgets.QWidget())
 

@@ -37,6 +37,11 @@ class Character(QWidget, Ui_Character):
         self.searchTimer.setInterval(200)
         self.searchTimer.timeout.connect(self._search_characters)
 
+        self.clearFilterButton.setToolTip("Reset all character search filters")
+        self.seriesComboBox.setToolTip("Filter characters by anime series")
+        self.charactersView.setToolTip(
+            "Double-click any character to open the asset editor"
+        )
         self._setup_series_filter()
         self._connect_callbacks()
 
@@ -68,6 +73,13 @@ class Character(QWidget, Ui_Character):
         self.searchTimer.stop()
         self.model.filter = self.searchEdit.text().strip()
         self.model.refresh()
+        if self.model.filter:
+            show_toast(
+                self,
+                "Character Search",
+                f"Showing characters matching '{self.model.filter}'",
+                ToastPreset.INFORMATION_DARK,
+            )
 
     def _toggle_favorite(self, state):
         """Toggle favorite status of selected character."""
@@ -89,6 +101,14 @@ class Character(QWidget, Ui_Character):
         """Toggle the favorites filter."""
         self.model.show_favorites = state == Qt.CheckState.Checked.value
         self.model.refresh()
+        show_toast(
+            self,
+            "Filter",
+            "Showing favorites only"
+            if self.model.show_favorites
+            else "Showing all characters",
+            ToastPreset.INFORMATION_DARK,
+        )
 
     def _filter_by_series(self):
         """Filter characters by selected series."""
@@ -110,6 +130,12 @@ class Character(QWidget, Ui_Character):
         self.model.series_filter = ""
         self.model.show_favorites = False
         self.model.refresh()
+        show_toast(
+            self,
+            "Filters Cleared",
+            "All character filters have been reset",
+            ToastPreset.INFORMATION_DARK,
+        )
 
     def _on_character_selected(self, index, previous=None):
         """Keep the favorite control tied to the current character."""

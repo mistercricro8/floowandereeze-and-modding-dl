@@ -1,7 +1,9 @@
+from pathlib import Path
+
 from pyqttoast import ToastPreset
 from PySide6 import QtCore, QtWidgets
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QDragEnterEvent, QDropEvent, QPixmap
+from PySide6.QtGui import QDragEnterEvent, QDropEvent, QGuiApplication, QPixmap
 from PySide6.QtWidgets import (
     QButtonGroup,
     QFileDialog,
@@ -19,12 +21,17 @@ from pages.ui.sleeve import Ui_Sleeve
 from services.sleeve_service import SleeveService
 from unity.unity_utils import fetch_bundle_thumb
 from util.constants import (
-    APP_CONFIG,
     FIT_MODE_BUTTON_STYLE,
     IMAGE_EXTENSIONS,
     IMAGE_FILTER,
 )
-from util.ui_util import show_toast
+from util.image_utils import slugify
+from util.ui_util import (
+    format_actionable_error,
+    open_in_file_manager,
+    show_actionable_error_dialog,
+    show_toast,
+)
 from widgets.crop_overlay_widget import CropOverlayWidget
 from widgets.image_viewer import ImageViewer
 from widgets.responsive_editor import ResponsiveEditor
@@ -58,6 +65,64 @@ class Sleeve(QtWidgets.QWidget, Ui_Sleeve):
         self.setAcceptDrops(True)
 
         self._connect_callbacks()
+        self._init_descriptive_controls()
+
+    def _init_descriptive_controls(self) -> None:
+        """Set clear, descriptive labels, tooltips, and initial states."""
+        self.selectButton.setText("Select Image...")
+        self.selectButton.setToolTip("Select replacement art for sleeve (PNG, JPG)")
+        self.selectButton.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.sleeveEdit.setPlaceholderText(
+            "No replacement image selected (browse or drag & drop)..."
+        )
+        self.replaceButton.setText("Apply Mod")
+        self.replaceButton.setToolTip("Select an image to enable replacing sleeve art")
+        self.replaceButton.setEnabled(False)
+        self.restoreButton.setText("Restore Original")
+        self.restoreButton.setToolTip("Restore sleeve art from original backup")
+        self.restoreButton.setEnabled(False)
+        self.extractButton.setText("Extract Texture (PNG)")
+        self.extractButton.setToolTip(
+            "Extract current sleeve texture to images/sleeves/"
+        )
+        self.extractButton.setEnabled(False)
+        self.copyButton.setText("Export Game Bundle")
+        self.copyButton.setToolTip("Export raw Unity bundle file to bundles/sleeves/")
+        self.copyButton.setEnabled(False)
+        self.borderButton.setText("Pick Border Color...")
+        self.borderButton.setToolTip("Choose a custom border color")
+        self.checkBox.setText("Custom Border")
+        self.fadeCheckBox.setText("Fade Border")
+
+    def _update_action_states(self) -> None:
+        """Deterministically update button states and descriptive tooltips."""
+        has_sleeve = self.selected is not None
+        has_image = bool(self.service.image_path)
+        self.replaceButton.setEnabled(has_sleeve and has_image)
+        if not has_image:
+            self.replaceButton.setToolTip("Select or drop a replacement image first")
+        else:
+            self.replaceButton.setToolTip(
+                "Replace sleeve art in game files with selected image"
+            )
+
+        has_disk_backup = False
+        if has_sleeve and self.selected.medium_bundle:
+            backup_path = (
+                Path("backups/sleeves") / f"{slugify(self.selected.medium_bundle)}.png"
+            )
+            has_disk_backup = backup_path.is_file()
+
+        self.restoreButton.setEnabled(has_disk_backup)
+        if has_disk_backup:
+            self.restoreButton.setToolTip("Revert sleeve art to original backup")
+        else:
+            self.restoreButton.setToolTip(
+                "No backup available yet (will be created automatically when modding)"
+            )
+
+        self.extractButton.setEnabled(has_sleeve)
+        self.copyButton.setEnabled(has_sleeve)
 
     def _init_current_viewer(self) -> None:
         """Replace self.current QLabel with an ImageViewer (preserves aspect ratio)."""
@@ -152,7 +217,8 @@ class Sleeve(QtWidgets.QWidget, Ui_Sleeve):
     def _load_image(self, path: str) -> None:
         self.sleeveEdit.setText(path)
         self.service.image_path = path
-        self.preview.setPixmap(QPixmap(path))
+        pixmap = QPixmap(path)
+        self.preview.setPixmap(pixmap)
         if self._crop_mode:
             self._crop_widget.set_image(path, _SLEEVE_CROP_RATIO)
             self.service.crop_rect = self._crop_widget.get_crop_rect_normalized()
@@ -160,6 +226,14 @@ class Sleeve(QtWidgets.QWidget, Ui_Sleeve):
         else:
             self.service.crop_rect = None
             self._mode_stack.setCurrentIndex(0)
+        self._update_action_states()
+        if not pixmap.isNull():
+            show_toast(
+                self,
+                "Image Selected",
+                f"Loaded {Path(path).name} ({pixmap.width()}×{pixmap.height()})",
+                ToastPreset.INFORMATION_DARK,
+            )
 
     def dragEnterEvent(self, event: QDragEnterEvent) -> None:
         """Accepts drag and drop of image files."""
@@ -179,15 +253,52 @@ class Sleeve(QtWidgets.QWidget, Ui_Sleeve):
                 break
 
     def _restore(self):
-        if self.service.restore_asset():
-            self.model.refresh()
+        if not self.selected:
             show_toast(
-                self, "Backup", "Sleeve restored successfully", ToastPreset.SUCCESS_DARK
+                self,
+                "Sleeve Restore",
+                "Please select a sleeve from the list first.",
+                ToastPreset.WARNING_DARK,
             )
-        else:
-            show_toast(
-                self, "Backup", "Sleeve backup not found", ToastPreset.WARNING_DARK
+            return
+
+        QGuiApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+        self.restoreButton.setEnabled(False)
+        try:
+            restored = False
+            for bundle in [self.selected.small_bundle, self.selected.medium_bundle]:
+                self.service.bundle = bundle
+                if self.service.restore_asset():
+                    restored = True
+            if restored:
+                self.model.refresh()
+                self.current.setPixmap(
+                    fetch_bundle_thumb(self.selected.medium_bundle, (256, 375)).pixmap(
+                        256, 375
+                    )
+                )
+                show_toast(
+                    self,
+                    "Sleeve Restored",
+                    f"Restored '{asset_name(self.selected)}' to original art.",
+                    ToastPreset.SUCCESS_DARK,
+                )
+                self._update_sleeve_status()
+            else:
+                show_toast(
+                    self,
+                    "Sleeve Restore",
+                    f"No backup found for '{asset_name(self.selected)}'.",
+                    ToastPreset.WARNING_DARK,
+                )
+        except Exception as error:
+            summary, hint = format_actionable_error(error, "restoring sleeve backup")
+            show_actionable_error_dialog(
+                self, "Restore Error", summary, hint, str(error)
             )
+        finally:
+            QGuiApplication.restoreOverrideCursor()
+            self._update_action_states()
 
     def _connect_callbacks(self):
         self.sleevesView.clicked.connect(self._on_sleeve_clicked)
@@ -217,12 +328,21 @@ class Sleeve(QtWidgets.QWidget, Ui_Sleeve):
 
     def _toggle_favorites_filter(self, state):
         self.model.show_favorites = state == QtCore.Qt.CheckState.Checked.value
-        if self.model.show_favorites:
-            self.model.refresh()
-            self.model.layoutChanged.emit()
-        else:
-            self.model.refresh()
-            self.model.layoutChanged.emit()
+        self.model.refresh()
+        self.model.layoutChanged.emit()
+
+    def _update_sleeve_status(self) -> None:
+        if not self.selected:
+            return
+        backup_path = (
+            Path("backups/sleeves") / f"{slugify(self.selected.medium_bundle)}.png"
+        )
+        status_text = (
+            "Backup: Secured"
+            if backup_path.is_file()
+            else "Backup: Will auto-create on mod"
+        )
+        self.bundle.setText(f"Editing {asset_name(self.selected)}\n{status_text}")
 
     def _on_sleeve_clicked(self, index):
         self.selected = self.model.assets[index.row()]
@@ -231,56 +351,137 @@ class Sleeve(QtWidgets.QWidget, Ui_Sleeve):
             fetch_bundle_thumb(self.selected.medium_bundle, (256, 375)).pixmap(256, 375)
         )
         self.service.bundle = self.selected.medium_bundle
-        self.bundle.setText(f"Editing {asset_name(self.selected)}")
+        self._update_sleeve_status()
         self.label.setText(f"Sleeves - {asset_name(self.selected)}")
-
-        self.replaceButton.setEnabled(True)
-        self.extractButton.setEnabled(True)
-        self.restoreButton.setEnabled(True)
-        self.copyButton.setEnabled(True)
         self.favoriteBox.setChecked(self.selected.favorite)
+        self._update_action_states()
 
     def _select_image(self):
-        file, _ = QFileDialog.getOpenFileUrl(self, "Select Image", "", IMAGE_FILTER)
+        file, _ = QFileDialog.getOpenFileUrl(
+            self, "Select Replacement Image", "", IMAGE_FILTER
+        )
 
         if file and file.url() != "":
             self._load_image(file.toLocalFile())
 
     def _copy(self):
-        self.service.copy_bundle()
-        show_toast(
-            self,
-            "Sleeve Copying",
-            'Sleeve copied to the "sleeves" folder',
-            ToastPreset.SUCCESS_DARK,
-        )
+        if not self.selected:
+            show_toast(
+                self, "Export", "Select a sleeve first.", ToastPreset.WARNING_DARK
+            )
+            return
+
+        QGuiApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+        try:
+            self.service.copy_bundle()
+            dest = Path("bundles/sleeves") / self.service.bundle
+            show_toast(
+                self,
+                "Bundle Exported",
+                f"Raw bundle copied to {dest}",
+                ToastPreset.SUCCESS_DARK,
+            )
+            open_in_file_manager(dest)
+        except Exception as error:
+            summary, hint = format_actionable_error(error, "exporting sleeve bundle")
+            show_actionable_error_dialog(
+                self, "Export Error", summary, hint, str(error)
+            )
+        finally:
+            QGuiApplication.restoreOverrideCursor()
 
     def _extract_texture(self):
-        self.service.extract_texture(self.service.bundle)
-        show_toast(
-            self,
-            "Sleeve Extraction",
-            'Sleeve extracted to the "sleeves" folder',
-            ToastPreset.SUCCESS_DARK,
-        )
+        if not self.selected:
+            show_toast(
+                self, "Extraction", "Select a sleeve first.", ToastPreset.WARNING_DARK
+            )
+            return
+
+        QGuiApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+        try:
+            self.service.extract_texture(self.service.bundle)
+            dest = Path("images/sleeves") / f"{slugify(self.service.bundle)}.png"
+            show_toast(
+                self,
+                "Texture Extracted",
+                f"Texture extracted to {dest}",
+                ToastPreset.SUCCESS_DARK,
+            )
+            open_in_file_manager(dest)
+        except Exception as error:
+            summary, hint = format_actionable_error(error, "extracting sleeve texture")
+            show_actionable_error_dialog(
+                self, "Extraction Error", summary, hint, str(error)
+            )
+        finally:
+            QGuiApplication.restoreOverrideCursor()
 
     def _replace_sleeve(self):
-        if APP_CONFIG.create_backup and not self.selected.has_backup:
-            self.service.create_backup(self.service.bundle)
-            self.model.set_backup_state(self.selected.id, True)
+        if not self.selected:
+            show_toast(
+                self,
+                "Sleeve Mod",
+                "Please select a sleeve from the list first.",
+                ToastPreset.WARNING_DARK,
+            )
+            return
+        if not self.service.image_path:
+            show_toast(
+                self,
+                "Sleeve Mod",
+                "Please select a replacement image first.",
+                ToastPreset.WARNING_DARK,
+            )
+            return
 
-        for bundle in [self.selected.small_bundle, self.selected.medium_bundle]:
-            self.service.bundle = bundle
-            self.service.replace_bundle()
+        bundles = [self.selected.small_bundle, self.selected.medium_bundle]
+        for bundle in bundles:
+            backup_path = Path("backups/sleeves") / f"{slugify(bundle)}.png"
+            if not backup_path.is_file():
+                try:
+                    self.service.bundle = bundle
+                    self.service.create_backup(bundle)
+                except Exception as error:
+                    summary, hint = format_actionable_error(
+                        error, "creating safety backup for sleeve"
+                    )
+                    show_actionable_error_dialog(
+                        self, "Backup Protection Failed", summary, hint, str(error)
+                    )
+                    return
+        self.model.set_backup_state(self.selected.id, True)
+        session.commit()
 
-        self.model.refresh()
-        self.current.setPixmap(
-            fetch_bundle_thumb(self.service.bundle, (256, 375)).pixmap(256, 375)
-        )
+        QGuiApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+        self.replaceButton.setText("Applying Mod...")
+        self.replaceButton.setEnabled(False)
+        try:
+            for bundle in bundles:
+                self.service.bundle = bundle
+                self.service.replace_bundle()
 
-        show_toast(
-            self, "Sleeve", "Sleeve replacement successful", ToastPreset.SUCCESS_DARK
-        )
+            self.model.refresh()
+            self.current.setPixmap(
+                fetch_bundle_thumb(self.selected.medium_bundle, (256, 375)).pixmap(
+                    256, 375
+                )
+            )
+            show_toast(
+                self,
+                "Sleeve Mod Applied",
+                f"Modded '{asset_name(self.selected)}'. Original is backed up.",
+                ToastPreset.SUCCESS_DARK,
+            )
+            self._update_sleeve_status()
+        except Exception as error:
+            summary, hint = format_actionable_error(error, "modifying sleeve bundle")
+            show_actionable_error_dialog(
+                self, "Mod Application Error", summary, hint, str(error)
+            )
+        finally:
+            QGuiApplication.restoreOverrideCursor()
+            self.replaceButton.setText("Apply Mod")
+            self._update_action_states()
 
     def _select_color(self):
         color = show_color_dialog()
@@ -288,16 +489,18 @@ class Sleeve(QtWidgets.QWidget, Ui_Sleeve):
         if color:
             self.service.border_color = color.name()
             self.borderEdit.setText(color.name())
+            self.borderButton.setText(f"Border: {color.name()}")
             self._switch_border()
 
     def _switch_border(self):
         border_enabled = self.checkBox.isChecked()
         self.fadeCheckBox.setEnabled(border_enabled)
+        color = self.service.border_color or "#000000"
 
         if border_enabled:
             self.preview.setStyleSheet(f"""
                 #preview {{
-                    border: 15px solid {self.service.border_color};
+                    border: 15px solid {color};
                 }}
             """)
         else:
@@ -309,5 +512,4 @@ class Sleeve(QtWidgets.QWidget, Ui_Sleeve):
 
     def _toggle_fade(self):
         self.service.border_fade = self.fadeCheckBox.isChecked()
-        if self.fadeCheckBox.isChecked() and self.checkBox.isChecked():
-            pass
+        self._switch_border()

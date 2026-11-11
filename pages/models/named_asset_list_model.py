@@ -12,7 +12,7 @@ from unity.unity_utils import fetch_bundle_thumb
 
 def asset_name(asset):
     """Show a metadata name or the stable medium bundle identifier."""
-    return asset.name or asset.medium_bundle
+    return getattr(asset, "name", None) or getattr(asset, "medium_bundle", "Asset")
 
 
 class NamedAssetListModel(AssetListModel):

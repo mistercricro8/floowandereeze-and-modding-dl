@@ -3,7 +3,7 @@ from pathlib import Path
 from pyqttoast import ToastPreset
 from PySide6 import QtWidgets
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QDragEnterEvent, QDropEvent, QPixmap
+from PySide6.QtGui import QDragEnterEvent, QDropEvent, QGuiApplication, QPixmap
 from PySide6.QtWidgets import (
     QButtonGroup,
     QFileDialog,
@@ -26,7 +26,12 @@ from util.constants import (
     IMAGE_FILTER,
 )
 from util.image_utils import slugify
-from util.ui_util import show_toast
+from util.ui_util import (
+    format_actionable_error,
+    open_in_file_manager,
+    show_actionable_error_dialog,
+    show_toast,
+)
 from widgets.crop_overlay_widget import CropOverlayWidget
 from widgets.image_viewer import ImageViewer
 from widgets.responsive_editor import ResponsiveEditor
@@ -60,6 +65,71 @@ class Field(QtWidgets.QWidget, Ui_Field):
         self.setAcceptDrops(True)
 
         self._connect_callbacks()
+        self._init_descriptive_controls()
+
+    def _init_descriptive_controls(self) -> None:
+        """Set clear, descriptive labels, tooltips, and initial states."""
+        self.selectButton.setText("Select Image...")
+        self.selectButton.setToolTip("Select replacement art for playmat (PNG, JPG)")
+        self.selectButton.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.assetEdit.setPlaceholderText(
+            "No replacement image selected (browse or drag & drop)..."
+        )
+        self.replaceButton.setText("Apply Mod")
+        self.replaceButton.setToolTip("Select an image to enable replacing field art")
+        self.replaceButton.setEnabled(False)
+
+        self.restoreButton = QPushButton("Restore Original", self)
+        self.restoreButton.setObjectName("restoreButton")
+        self.restoreButton.setEnabled(False)
+        self.restoreButton.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.restoreButton.setToolTip("Revert playmat art to original backup")
+        self.restoreButton.clicked.connect(self._restore)
+        idx = self.horizontalLayout_4.indexOf(self.replaceButton)
+        self.horizontalLayout_4.insertWidget(idx, self.restoreButton)
+
+        self.extractButton.setText("Extract Texture (PNG)")
+        self.extractButton.setToolTip("Extract current field texture to images/fields/")
+        self.extractButton.setEnabled(False)
+        self.copyButton.setText("Export Game Bundle")
+        self.copyButton.setToolTip("Export raw Unity bundle file to bundles/fields/")
+        self.copyButton.setEnabled(False)
+
+    def _update_action_states(self) -> None:
+        """Deterministically update button states and descriptive tooltips."""
+        has_field = self.selected is not None
+        has_image = bool(self.service.image_path)
+        if hasattr(self, "replaceButton"):
+            self.replaceButton.setEnabled(has_field and has_image)
+            if not has_image:
+                self.replaceButton.setToolTip(
+                    "Select or drop a replacement image first"
+                )
+            else:
+                self.replaceButton.setToolTip(
+                    "Replace field art in game files with selected image"
+                )
+
+        has_disk_backup = False
+        if has_field and getattr(self.selected, "medium_bundle", None):
+            backup_path = (
+                Path("backups/fields") / f"{slugify(self.selected.medium_bundle)}.png"
+            )
+            has_disk_backup = backup_path.is_file()
+
+        if hasattr(self, "restoreButton"):
+            self.restoreButton.setEnabled(has_disk_backup)
+            if has_disk_backup:
+                self.restoreButton.setToolTip("Revert playmat art to original backup")
+            else:
+                self.restoreButton.setToolTip(
+                    "No backup available yet (will be created automatically on mod)"
+                )
+
+        if hasattr(self, "extractButton"):
+            self.extractButton.setEnabled(has_field)
+        if hasattr(self, "copyButton"):
+            self.copyButton.setEnabled(has_field)
 
     def _init_current_viewer(self) -> None:
         """Replace self.current QLabel with an ImageViewer (preserves aspect ratio)."""
@@ -153,7 +223,8 @@ class Field(QtWidgets.QWidget, Ui_Field):
     def _load_image(self, path: str) -> None:
         self.assetEdit.setText(path)
         self.service.image_path = path
-        self.preview.setPixmap(QPixmap(path))
+        pixmap = QPixmap(path)
+        self.preview.setPixmap(pixmap)
         if self._crop_mode:
             self._crop_widget.set_image(path, _FIELD_CROP_RATIO)
             self.service.crop_rect = self._crop_widget.get_crop_rect_normalized()
@@ -161,6 +232,14 @@ class Field(QtWidgets.QWidget, Ui_Field):
         else:
             self.service.crop_rect = None
             self._mode_stack.setCurrentIndex(0)
+        self._update_action_states()
+        if not pixmap.isNull():
+            show_toast(
+                self,
+                "Image Selected",
+                f"Loaded {Path(path).name} ({pixmap.width()}×{pixmap.height()})",
+                ToastPreset.INFORMATION_DARK,
+            )
 
     def _connect_callbacks(self):
         self.fieldsView.clicked.connect(self._on_field_clicked)
@@ -168,6 +247,20 @@ class Field(QtWidgets.QWidget, Ui_Field):
         self.replaceButton.clicked.connect(self._replace)
         self.extractButton.clicked.connect(self._extract_texture)
         self.copyButton.clicked.connect(self._copy)
+
+    def _update_field_status(self) -> None:
+        if not self.selected:
+            return
+        backup_path = (
+            Path("backups/fields") / f"{slugify(self.selected.medium_bundle)}.png"
+        )
+        status_text = (
+            "Backup: Secured"
+            if backup_path.is_file()
+            else "Backup: Will auto-create on mod"
+        )
+        if hasattr(self, "bundle"):
+            self.bundle.setText(f"Editing {asset_name(self.selected)}\n{status_text}")
 
     def _on_field_clicked(self, index):
         self.selected = self.model.fields[index.row()]
@@ -178,39 +271,133 @@ class Field(QtWidgets.QWidget, Ui_Field):
             )
         )
         self.service.bundle = self.selected.medium_bundle
-        self.bundle.setText(f"Editing {asset_name(self.selected)}")
+        self._update_field_status()
         self.label.setText(f"Fields - {asset_name(self.selected)}")
-
-        self.replaceButton.setEnabled(True)
-        self.extractButton.setEnabled(True)
-        self.copyButton.setEnabled(True)
+        self._update_action_states()
 
     def _select_image(self):
-        file, _ = QFileDialog.getOpenFileUrl(self, "Select Image", "", IMAGE_FILTER)
+        file, _ = QFileDialog.getOpenFileUrl(
+            self, "Select Replacement Image", "", IMAGE_FILTER
+        )
 
         if file and file.url() != "":
             self._load_image(file.toLocalFile())
 
+    def _restore(self):
+        if not self.selected:
+            show_toast(
+                self,
+                "Field Restore",
+                "Please select a field from the list first.",
+                ToastPreset.WARNING_DARK,
+            )
+            return
+
+        QGuiApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+        if hasattr(self, "restoreButton"):
+            self.restoreButton.setEnabled(False)
+        try:
+            restored = False
+            for bundle in [self.selected.small_bundle, self.selected.medium_bundle]:
+                self.service.bundle = bundle
+                if self.service.restore_asset():
+                    restored = True
+            if restored:
+                self.model.refresh()
+                self.current.setPixmap(
+                    fetch_field_thumb(self.selected).pixmap(768, 267)
+                )
+                show_toast(
+                    self,
+                    "Field Restored",
+                    f"Restored '{asset_name(self.selected)}' to original art.",
+                    ToastPreset.SUCCESS_DARK,
+                )
+                self._update_field_status()
+            else:
+                show_toast(
+                    self,
+                    "Field Restore",
+                    f"No backup found for '{asset_name(self.selected)}'.",
+                    ToastPreset.WARNING_DARK,
+                )
+        except Exception as error:
+            summary, hint = format_actionable_error(error, "restoring field backup")
+            show_actionable_error_dialog(
+                self, "Restore Error", summary, hint, str(error)
+            )
+        finally:
+            QGuiApplication.restoreOverrideCursor()
+            self._update_action_states()
+
     def _extract_texture(self):
-        self.service.extract_texture(self.service.bundle)
-        show_toast(
-            self,
-            "Field Extraction",
-            'Field extracted to the "fields" folder',
-            ToastPreset.SUCCESS_DARK,
-        )
+        if not self.selected:
+            show_toast(
+                self, "Extraction", "Select a field first.", ToastPreset.WARNING_DARK
+            )
+            return
+
+        QGuiApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+        try:
+            self.service.extract_texture(self.service.bundle)
+            dest = Path("images/fields") / f"{slugify(self.service.bundle)}.png"
+            show_toast(
+                self,
+                "Texture Extracted",
+                f"Texture extracted to {dest}",
+                ToastPreset.SUCCESS_DARK,
+            )
+            open_in_file_manager(dest)
+        except Exception as error:
+            summary, hint = format_actionable_error(error, "extracting field texture")
+            show_actionable_error_dialog(
+                self, "Extraction Error", summary, hint, str(error)
+            )
+        finally:
+            QGuiApplication.restoreOverrideCursor()
 
     def _copy(self):
-        self.service.copy_bundle()
-        show_toast(
-            self,
-            "Field Copying",
-            'Field copied to the "fields" folder',
-            ToastPreset.SUCCESS_DARK,
-        )
+        if not self.selected:
+            show_toast(
+                self, "Export", "Select a field first.", ToastPreset.WARNING_DARK
+            )
+            return
+
+        QGuiApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+        try:
+            self.service.copy_bundle()
+            dest = Path("bundles/fields") / self.service.bundle
+            show_toast(
+                self,
+                "Bundle Exported",
+                f"Raw bundle copied to {dest}",
+                ToastPreset.SUCCESS_DARK,
+            )
+            open_in_file_manager(dest)
+        except Exception as error:
+            summary, hint = format_actionable_error(error, "exporting field bundle")
+            show_actionable_error_dialog(
+                self, "Export Error", summary, hint, str(error)
+            )
+        finally:
+            QGuiApplication.restoreOverrideCursor()
 
     def _replace(self):
-        if not self.selected or not self.service.image_path:
+        if not self.selected:
+            show_toast(
+                self,
+                "Field Mod",
+                "Please select a field from the list first.",
+                ToastPreset.WARNING_DARK,
+            )
+            return
+        if not self.service.image_path:
+            show_toast(
+                self,
+                "Field Mod",
+                "Please select a replacement image first.",
+                ToastPreset.WARNING_DARK,
+            )
             return
 
         bundles = [self.selected.small_bundle, self.selected.medium_bundle]
@@ -225,16 +412,37 @@ class Field(QtWidgets.QWidget, Ui_Field):
             self.model.set_backup_state(self.selected.id, True)
             session.commit()
 
-        for bundle in bundles:
-            self.service.bundle = bundle
-            self.service.replace_bundle()
+        if hasattr(self, "replaceButton"):
+            self.replaceButton.setText("Applying Mod...")
+            self.replaceButton.setEnabled(False)
+        QGuiApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+        try:
+            for bundle in bundles:
+                self.service.bundle = bundle
+                self.service.replace_bundle()
 
-        self.model.refresh()
-        self.current.setPixmap(fetch_field_thumb(self.selected).pixmap(768, 267))
+            self.model.refresh()
+            self.current.setPixmap(fetch_field_thumb(self.selected).pixmap(768, 267))
 
-        show_toast(
-            self, "Field", "Field replacement successful", ToastPreset.SUCCESS_DARK
-        )
+            show_toast(
+                self,
+                "Field Mod Applied",
+                f"Modded '{asset_name(self.selected)}'.",
+                ToastPreset.SUCCESS_DARK,
+            )
+            if hasattr(self, "_update_field_status"):
+                self._update_field_status()
+        except Exception as error:
+            summary, hint = format_actionable_error(error, "modifying field bundle")
+            show_actionable_error_dialog(
+                self, "Mod Application Error", summary, hint, str(error)
+            )
+        finally:
+            QGuiApplication.restoreOverrideCursor()
+            if hasattr(self, "replaceButton"):
+                self.replaceButton.setText("Apply Mod")
+            if hasattr(self, "_update_action_states"):
+                self._update_action_states()
 
     def dragEnterEvent(self, event: QDragEnterEvent) -> None:
         """Accepts drag and drop of image files."""

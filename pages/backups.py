@@ -1,12 +1,14 @@
 """Backup inventory and scoped archive import/export UI."""
 
 import logging
+from pathlib import Path
 from zipfile import BadZipFile
 
 from PySide6 import QtCore, QtWidgets
 from sqlalchemy.exc import SQLAlchemyError
 
 from services.backup_service import CATEGORY_LABELS, BackupService, sync_backup_flags
+from util.ui_util import open_in_file_manager
 
 logger = logging.getLogger(__name__)
 
@@ -196,14 +198,41 @@ class Backups(QtWidgets.QWidget):
         self.picker = BackupPicker(self)
         layout.addWidget(self.picker)
         actions = QtWidgets.QHBoxLayout()
-        for text, name, callback in (
-            ("Refresh", "refreshButton", self.refresh),
-            ("Export ZIP…", "exportButton", self._export),
-            ("Import ZIP…", "importButton", self._import),
-            ("Remove backups…", "clearButton", self._delete),
+        for text, name, tooltip, callback in (
+            (
+                "Refresh",
+                "refreshButton",
+                "Rescan the local backups folder",
+                self.refresh,
+            ),
+            (
+                "Open Backups Folder",
+                "openFolderButton",
+                "Open the backups directory in the system file manager",
+                self._open_backups_folder,
+            ),
+            (
+                "Export ZIP…",
+                "exportButton",
+                "Export selected backups into a ZIP archive",
+                self._export,
+            ),
+            (
+                "Import ZIP…",
+                "importButton",
+                "Import backups from an existing ZIP archive",
+                self._import,
+            ),
+            (
+                "Remove backups…",
+                "clearButton",
+                "Permanently remove selected backups",
+                self._delete,
+            ),
         ):
             button = QtWidgets.QPushButton(text)
             button.setObjectName(name)
+            button.setToolTip(tooltip)
             button.setMinimumWidth(button.fontMetrics().horizontalAdvance(text) + 32)
             button.clicked.connect(callback)
             actions.addWidget(button)
@@ -213,6 +242,16 @@ class Backups(QtWidgets.QWidget):
         self.status.setWordWrap(True)
         layout.addWidget(self.status)
         self.refresh()
+
+    def _open_backups_folder(self):
+        folder = (
+            Path(self.service.root)
+            if hasattr(self.service, "root")
+            else Path("backups")
+        )
+        folder.mkdir(parents=True, exist_ok=True)
+        open_in_file_manager(folder)
+        self.status.setText(f"Opened backups folder: {folder.resolve()}")
 
     def showEvent(self, event):
         """Refresh files whenever the user opens this tab."""
