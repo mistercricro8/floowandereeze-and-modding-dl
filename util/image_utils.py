@@ -1,7 +1,7 @@
+import math
 from re import sub
 from unicodedata import normalize
 
-import numpy as np
 from PIL import Image, ImageOps
 
 
@@ -36,10 +36,11 @@ def add_sleeve_border_with_fade(image: Image.Image, color: str) -> Image.Image:
         image, border=(border_width, border_height), fill=original_color
     )
 
-    result_array = np.array(result).astype(np.float32)
-    original_array = np.array(image).astype(np.float32)
+    result_pixels = result.load()
+    orig_pixels = image.load()
 
     fade_distance = min(border_width, border_height) * 2.0
+    border_color = (r, g, b, 255)
     for y in range(new_height):
         for x in range(new_width):
             orig_x = x - border_width
@@ -68,21 +69,20 @@ def add_sleeve_border_with_fade(image: Image.Image, color: str) -> Image.Image:
                     )
                     smooth2 = smooth1 * smooth1 * (3.0 - 2.0 * smooth1)
 
-                    fade_factor = 1.0 - np.exp(-4.0 * smooth2)
+                    fade_factor = 1.0 - math.exp(-4.0 * smooth2)
+                    inv_fade = 1.0 - fade_factor
 
-                    original_pixel = original_array[orig_y, orig_x]
-                    border_color = np.array([r, g, b, 255], dtype=np.float32)
-
-                    blended_pixel = (
-                        1 - fade_factor
-                    ) * border_color + fade_factor * original_pixel
-                    result_array[y, x] = blended_pixel
+                    orig_p = orig_pixels[orig_x, orig_y]
+                    result_pixels[x, y] = (
+                        int(inv_fade * r + fade_factor * orig_p[0]),
+                        int(inv_fade * g + fade_factor * orig_p[1]),
+                        int(inv_fade * b + fade_factor * orig_p[2]),
+                        int(inv_fade * 255 + fade_factor * orig_p[3]),
+                    )
                 else:
-                    result_array[y, x] = original_array[orig_y, orig_x]
+                    result_pixels[x, y] = orig_pixels[orig_x, orig_y]
             else:
-                result_array[y, x] = [r, g, b, 255]
-
-    result = Image.fromarray(result_array.astype(np.uint8), "RGBA")
+                result_pixels[x, y] = border_color
 
     return result
 

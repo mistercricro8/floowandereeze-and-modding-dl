@@ -273,8 +273,6 @@ class QualityOfLifeTests(unittest.TestCase):
             )
 
     def test_metadata_names_preserve_sleeve_and_field_flags(self):
-        import pandas as pd
-
         for cls, update in (
             (SleeveModel, update_service.update_sleeves),
             (FieldModel, update_service.update_fields),
@@ -289,9 +287,7 @@ class QualityOfLifeTests(unittest.TestCase):
                 )
             )
             session.commit()
-            data = pd.DataFrame(
-                [dict(name="Named asset", medium="abcdef01", small="abcdef02")]
-            )
+            data = [dict(name="Named asset", medium="abcdef01", small="abcdef02")]
             with patch.object(
                 update_service, "get_github_parquet_file", return_value=data
             ):
@@ -301,8 +297,9 @@ class QualityOfLifeTests(unittest.TestCase):
             self.assertEqual(asset.name, "Named asset")
             self.assertTrue(asset.favorite)
             self.assertTrue(asset.has_backup)
-        self.assertIsNone(update_service.asset_label(pd.Series(dict(name=pd.NA))))
-        self.assertIsNone(update_service.asset_label(pd.Series(dtype=object)))
+        self.assertIsNone(update_service.asset_label(dict(name=None)))
+        self.assertIsNone(update_service.asset_label(dict(name=float("nan"))))
+        self.assertIsNone(update_service.asset_label({}))
 
     def test_discovery_and_path_normalization(self):
         library = Path("library")
@@ -338,6 +335,39 @@ class QualityOfLifeTests(unittest.TestCase):
         ):
             paths = game_discovery._get_steam_library_paths()
         self.assertEqual(paths, [str(steam), str(secondary)])
+
+    def test_resolve_game_root_and_prepare_environment(self):
+        from unity.unity_utils import prepare_environment
+
+        install = Path("game-root-test").resolve()
+        unity_file = install / "dlpc_Data" / "data.unity3d"
+        unity_file.parent.mkdir(parents=True, exist_ok=True)
+        unity_file.touch()
+
+        account = install / "LocalData" / "custom_account_id_longer_than_8"
+        account.mkdir(parents=True, exist_ok=True)
+
+        self.assertEqual(game_discovery.resolve_game_root(str(account)), install)
+        self.assertEqual(game_discovery.resolve_game_root(str(account.parent)), install)
+        self.assertEqual(game_discovery.resolve_game_root(str(install)), install)
+        self.assertIsNone(game_discovery.resolve_game_root(""))
+        self.assertIsNone(game_discovery.resolve_game_root(None))
+
+        with patch("unity.unity_utils.APP_CONFIG") as mock_config:
+            mock_config.game_path = str(account)
+            streaming = prepare_environment(miss=True, bundle="12345678")
+            expected_streaming = str(
+                install
+                / "dlpc_Data"
+                / "StreamingAssets"
+                / "AssetBundle"
+                / "12"
+                / "12345678"
+            )
+            self.assertEqual(streaming, expected_streaming)
+
+            local = prepare_environment(miss=False, bundle="12345678")
+            self.assertEqual(local, str(account / "12" / "12345678"))
 
     def test_character_crop_tracks_selected_asset_ratio(self):
         from dialogs.character_edit_dialog import CharacterEditDialog
@@ -895,7 +925,8 @@ class QualityOfLifeTests(unittest.TestCase):
         second.close()
 
     def _local_metadata_repo(self):
-        import pandas as pd
+        import pyarrow as pa
+        import pyarrow.parquet as pq
 
         temp = tempfile.TemporaryDirectory(prefix="local metadata ")
         self.addCleanup(temp.cleanup)
@@ -903,9 +934,8 @@ class QualityOfLifeTests(unittest.TestCase):
         (root / "data").mkdir()
         (root / "data/version.txt").write_text("2026-10-19\n", encoding="utf-8")
         for dataset in ("cards", "sleeves", "fields", "characters"):
-            pd.DataFrame([{"name": "Unpublished " + dataset}]).to_parquet(
-                root / f"data/{dataset}.parquet"
-            )
+            table = pa.Table.from_pylist([{"name": "Unpublished " + dataset}])
+            pq.write_table(table, root / f"data/{dataset}.parquet")
         return root
 
     def test_local_source_browse_persists_and_reads_working_files_offline(self):
@@ -939,7 +969,7 @@ class QualityOfLifeTests(unittest.TestCase):
                     frame = update_service.get_github_parquet_file(
                         f"data/{dataset}.parquet"
                     )
-                    self.assertEqual(frame.iloc[0]["name"], "Unpublished " + dataset)
+                    self.assertEqual(frame[0]["name"], "Unpublished " + dataset)
                 (root / "data/version.txt").write_text("2026-10-20", encoding="utf-8")
                 self.assertEqual(
                     update_service.get_github_raw_file("data/version.txt"), "2026-10-20"
@@ -1020,6 +1050,7 @@ class QualityOfLifeTests(unittest.TestCase):
         response = MagicMock()
         response.json.return_value = {"download_url": "https://example.invalid/data"}
         response.text = "2026-10-19"
+        response.content = b"PARQUET_TEST"
         with patch.object(update_service.requests, "get", return_value=response) as get:
             self.assertEqual(
                 update_service.get_github_raw_file("data/version.txt"), "2026-10-19"
@@ -1031,15 +1062,19 @@ class QualityOfLifeTests(unittest.TestCase):
             self.assertEqual(
                 get.call_args_list[0].kwargs["params"], {"ref": "feature/asset-names"}
             )
+        mock_table = MagicMock()
+        mock_table.to_pylist.return_value = []
         with (
             patch.object(update_service.requests, "get", return_value=response) as get,
-            patch.object(update_service, "read_parquet") as parquet,
+            patch.object(
+                update_service.pq, "read_table", return_value=mock_table
+            ) as read_table,
         ):
             update_service.get_github_parquet_file("data/sleeves.parquet")
             self.assertEqual(
-                get.call_args.kwargs["params"], {"ref": "feature/asset-names"}
+                get.call_args_list[0].kwargs["params"], {"ref": "feature/asset-names"}
             )
-            parquet.assert_called_once_with("https://example.invalid/data")
+            read_table.assert_called_once()
         self.assertEqual(
             update_service._github_source(branch=""), ("Example", "etl", {})
         )

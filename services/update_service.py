@@ -1,11 +1,11 @@
 """Update the database from local working-tree exports or a GitHub repository."""
 
+import io
 from pathlib import Path
+from typing import Any
 
-import pandas as pd
+import pyarrow.parquet as pq
 import requests
-from pandas import DataFrame, read_parquet
-from pandas.errors import EmptyDataError
 from requests.exceptions import HTTPError, RequestException, Timeout
 
 from database.models import (
@@ -130,7 +130,19 @@ def get_github_raw_file(
         raise RequestException(f"Request failed: {str(e)}") from e
 
 
-def get_github_parquet_file(path: str, owner=None, repo=None, branch=None) -> DataFrame:
+def _is_null_or_empty(value: Any) -> bool:
+    """Check if value is None, float NaN, or empty."""
+    if value is None:
+        return True
+    return bool(isinstance(value, float) and value != value)
+
+
+def get_github_parquet_file(
+    path: str,
+    owner: str | None = None,
+    repo: str | None = None,
+    branch: str | None = None,
+) -> list[dict[str, Any]]:
     """
     Read a Parquet file from the saved local checkout or GitHub source.
 
@@ -140,16 +152,19 @@ def get_github_parquet_file(path: str, owner=None, repo=None, branch=None) -> Da
     :param branch: Optional branch/ref; blank follows the repository default.
         Omitted source arguments use saved Configuration settings.
 
-    :return: The raw content of the file as a pandas DataFrame.
+    :return: The raw content of the file as a list of column-to-value dictionaries.
     :raises HTTPError: If the GitHub API request fails
     :raises Timeout: If the request times out
     :raises RequestException: For other request-related errors
-    :raises ValueError: If the response doesn't contain a download URL
-    :raises EmptyDataError: If the parquet file is empty or invalid
+    :raises ValueError: If the response has no download URL or file is invalid
     """
     local_file = _local_metadata_file(path, owner, repo, branch)
     if local_file is not None:
-        return read_parquet(local_file)
+        try:
+            return pq.read_table(local_file).to_pylist()
+        except Exception as e:
+            raise ValueError(f"Failed to read parquet file: {str(e)}") from e
+
     owner, repo, params = _github_source(owner, repo, branch)
     url = f"https://api.github.com/repos/{owner}/{repo}/contents/{path}"
 
@@ -166,7 +181,10 @@ def get_github_parquet_file(path: str, owner=None, repo=None, branch=None) -> Da
 
         raw_url = file_data["download_url"]
 
-        return read_parquet(raw_url)
+        raw_response = requests.get(raw_url, headers=headers, timeout=10)
+        raw_response.raise_for_status()
+
+        return pq.read_table(io.BytesIO(raw_response.content)).to_pylist()
 
     except Timeout as e:
         raise Timeout(f"Request timed out: {str(e)}") from e
@@ -174,14 +192,17 @@ def get_github_parquet_file(path: str, owner=None, repo=None, branch=None) -> Da
         raise HTTPError(f"GitHub API request failed: {str(e)}") from e
     except RequestException as e:
         raise RequestException(f"Request failed: {str(e)}") from e
-    except EmptyDataError as e:
-        raise EmptyDataError(f"Failed to read parquet file: {str(e)}") from e
+    except Exception as e:
+        raise ValueError(f"Failed to read parquet file: {str(e)}") from e
 
 
-def asset_label(row):
+def asset_label(row: dict[str, Any]) -> str | None:
     """Accept both new named metadata and older Parquet exports."""
     value = row.get("name")
-    return str(value).strip() or None if pd.notna(value) else None
+    if _is_null_or_empty(value):
+        return None
+    cleaned = str(value).strip()
+    return cleaned if cleaned else None
 
 
 def update_sleeves() -> None:
@@ -211,8 +232,9 @@ def update_sleeves() -> None:
                     medium_bundle=sleeve["medium"],
                     small_bundle=sleeve["small"],
                 )
-                for _, sleeve in remote_sleeves.iterrows()
-                if not pd.isnull(sleeve["medium"]) and not pd.isnull(sleeve["small"])
+                for sleeve in remote_sleeves
+                if not _is_null_or_empty(sleeve.get("medium"))
+                and not _is_null_or_empty(sleeve.get("small"))
             ]
         )
         local_session.commit()
@@ -246,7 +268,7 @@ def update_cards() -> None:
                     medium_bundle=card["medium"],
                     small_bundle=card["small"],
                 )
-                for _, card in remote_cards.iterrows()
+                for card in remote_cards
             ]
         )
         local_session.commit()
@@ -285,8 +307,9 @@ def update_fields() -> None:
                     medium_bundle=field["medium"],
                     small_bundle=field["small"],
                 )
-                for _, field in remote_fields.iterrows()
-                if not pd.isnull(field["medium"]) and not pd.isnull(field["small"])
+                for field in remote_fields
+                if not _is_null_or_empty(field.get("medium"))
+                and not _is_null_or_empty(field.get("small"))
             ]
         )
         local_session.commit()
@@ -314,8 +337,8 @@ def update_characters() -> None:
         local_session.query(CharacterModel).delete()
 
         characters_to_add = []
-        for _, character_row in remote_characters.iterrows():
-            if pd.isnull(character_row["konami_id"]):
+        for character_row in remote_characters:
+            if _is_null_or_empty(character_row.get("konami_id")):
                 continue
 
             character = CharacterModel(
@@ -323,7 +346,7 @@ def update_characters() -> None:
                 konami_id=character_row["konami_id"],
                 series=(
                     character_row["series"]
-                    if not pd.isnull(character_row["series"])
+                    if not _is_null_or_empty(character_row.get("series"))
                     else "unknown"
                 ),
             )
@@ -331,7 +354,7 @@ def update_characters() -> None:
             from database.models import CharacterAssets
 
             for attr_name in CharacterAssets._ENUM_TO_ATTR.values():
-                if attr_name in character_row and not pd.isnull(
+                if attr_name in character_row and not _is_null_or_empty(
                     character_row[attr_name]
                 ):
                     setattr(character, attr_name, character_row[attr_name])

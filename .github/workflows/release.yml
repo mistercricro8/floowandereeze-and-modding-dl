@@ -13,12 +13,27 @@ permissions:
 
 jobs:
   build:
-    runs-on: windows-latest
+    strategy:
+      matrix:
+        include:
+          - os: windows-latest
+            artifact_name: "release-windows"
+            asset_pattern: "dist/*.exe"
+          - os: ubuntu-24.04
+            artifact_name: "release-linux"
+            asset_pattern: "dist/Floowandereeze*"
+    runs-on: ${{ matrix.os }}
 
     steps:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
+
+      - name: Install Linux build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libegl1 libgl1 libxkbcommon0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-render-util0 libxcb-shape0 libxcb-xinerama0
 
       - name: Install uv
         uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990
@@ -28,14 +43,34 @@ jobs:
       - name: Install dependencies
         run: uv sync --locked --group build
 
-      - name: Build application
+      - name: Build application with PyInstaller
         run: uv run --locked --group build floo-build
+
+      - name: Upload Build Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: ${{ matrix.asset_pattern }}
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-artifacts
 
       - name: Create Release Draft
         id: create_release
         uses: softprops/action-gh-release@v2
         with:
-          files: "dist/Floowandereeze & Modding - Duel Links.exe"
+          files: |
+            release-artifacts/release-windows/*
+            release-artifacts/release-linux/*
           generate_release_notes: true
           draft: true
           prerelease: ${{ contains(github.ref, 'beta') }}

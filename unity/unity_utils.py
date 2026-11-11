@@ -9,23 +9,27 @@ from UnityPy import load as unity_load
 from database.models import FieldModel
 from util.constants import APP_CONFIG, FILE
 from util.enums import FieldCoordinates
+from util.game_discovery import resolve_game_root
 
 
 def prepare_environment(miss: bool, bundle: str) -> str:
     """returns the UnityPy environment path related to the bundle and game path given"""
-
-    return (
-        join(
-            APP_CONFIG.game_path[:-18],
-            "dlpc_Data",
-            "StreamingAssets",
-            "AssetBundle",
-            bundle[:2],
-            bundle,
+    if miss:
+        game_root = resolve_game_root(APP_CONFIG.game_path)
+        if game_root is None:
+            raise FileNotFoundError(
+                "Cannot locate Duel Links game root containing "
+                f"dlpc_Data/data.unity3d from: {APP_CONFIG.game_path!r}"
+            )
+        return str(
+            game_root
+            / "dlpc_Data"
+            / "StreamingAssets"
+            / "AssetBundle"
+            / bundle[:2]
+            / bundle
         )
-        if miss
-        else join(APP_CONFIG.game_path, bundle[:2], bundle)
-    )
+    return join(APP_CONFIG.game_path, bundle[:2], bundle)
 
 
 def fetch_bundle_thumb(

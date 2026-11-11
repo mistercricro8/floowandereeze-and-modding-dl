@@ -46,6 +46,9 @@
           stdenv.cc.cc
           zlib
           glib
+          krb5.lib
+          zstd.out
+          brotli.lib
         ];
         uvEnv = pkgs.buildEnv {
           name = "floowandereeze-env";
@@ -54,7 +57,7 @@
       in
       {
         devShells.default = pkgs.mkShell {
-          packages = [ pkgs.uv pkgs.python3 ];
+          packages = [ pkgs.uv pkgs.python312 ];
           buildInputs = qtLibs;
           LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath qtLibs;
           shellHook = ''

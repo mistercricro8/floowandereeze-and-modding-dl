@@ -47,7 +47,7 @@ def main() -> None:
         "--add-data",
         f"{ROOT / 'pages' / 'ui'}{os.pathsep}pages/ui/",
         "--hidden-import",
-        "fastparquet",
+        "pyarrow",
         "--name",
         APP_NAME,
     ]

@@ -46,10 +46,39 @@ def is_valid_game_path(folder: str) -> tuple[bool, str | None]:
             - bool: True if the path is valid, False otherwise
             - str | None: Error message if invalid, None if valid
     """
-    from util.game_discovery import normalize_game_path
+    from util.game_discovery import normalize_game_path, resolve_game_root
 
-    if folder and normalize_game_path(folder):
+    if not folder:
+        return (
+            False,
+            "Select a Duel Links installation, LocalData, or player data "
+            "folder containing dlpc_Data/data.unity3d.",
+        )
+
+    cleaned = str(folder).strip().strip("'\"")
+    if normalize_game_path(cleaned):
         return (True, None)
+
+    game_root = resolve_game_root(cleaned)
+    if game_root is not None:
+        local_data = game_root / "LocalData"
+        has_player_account = False
+        if local_data.is_dir():
+            try:
+                has_player_account = any(
+                    p.is_dir() and p.name != "00000000" for p in local_data.iterdir()
+                )
+            except OSError:
+                has_player_account = False
+
+        if not has_player_account:
+            return (
+                False,
+                f"Found Duel Links installation at '{game_root.name}', but no "
+                "player account data was found in LocalData. Please launch "
+                "Yu-Gi-Oh! Duel Links once through Steam to initialize account data.",
+            )
+
     return (
         False,
         "Select a Duel Links installation, LocalData, or player data "
