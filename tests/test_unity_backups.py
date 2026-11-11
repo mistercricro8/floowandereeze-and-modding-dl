@@ -410,7 +410,9 @@ class UnityBackupTests(unittest.TestCase):
 
     def test_get_configured_packer_normalizes_to_lowercase(self):
         self.assertEqual(get_configured_packer(SimpleNamespace(packer="LZ4")), "lz4")
-        self.assertEqual(get_configured_packer(SimpleNamespace(packer="Lz4Hc")), "lz4hc")
+        self.assertEqual(
+            get_configured_packer(SimpleNamespace(packer="Lz4Hc")), "lz4hc"
+        )
         self.assertEqual(get_configured_packer(SimpleNamespace(packer="LZMA")), "lzma")
         self.assertEqual(get_configured_packer(SimpleNamespace(packer="NONE")), "none")
         self.assertEqual(get_configured_packer(SimpleNamespace(packer=None)), "lz4")
@@ -418,6 +420,7 @@ class UnityBackupTests(unittest.TestCase):
 
     def test_migrations_normalize_uppercase_packer(self):
         import sqlite3
+
         from database.migrations import run_migrations
 
         db_file = self.root / "test_migration.db"
@@ -471,7 +474,9 @@ class UnityBackupTests(unittest.TestCase):
         def fake_replace():
             observed_path.append(service.image_path)
 
-        with patch.object(service, "replace_bundle", side_effect=fake_replace) as mock_replace:
+        with patch.object(
+            service, "replace_bundle", side_effect=fake_replace
+        ) as mock_replace:
             restored = service.restore_asset()
             self.assertTrue(restored)
             mock_replace.assert_called_once()

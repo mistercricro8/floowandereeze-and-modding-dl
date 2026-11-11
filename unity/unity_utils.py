@@ -1,4 +1,4 @@
-from os.path import getsize, isfile, join
+from os.path import isfile, join
 
 from PIL import Image
 from PIL.ImageQt import ImageQt
@@ -157,4 +157,3 @@ def get_configured_packer(config=None) -> str:
     except Exception:
         pass
     return "lz4"
-

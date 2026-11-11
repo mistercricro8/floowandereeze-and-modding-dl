@@ -1,5 +1,4 @@
 import logging
-import os
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from datetime import datetime
 from pathlib import Path

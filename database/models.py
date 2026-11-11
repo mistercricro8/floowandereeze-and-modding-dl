@@ -47,7 +47,9 @@ class AppConfig(base):
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     mipmap_count: Mapped[int] = mapped_column(Integer, default=10)
-    game_path: Mapped[str | None] = mapped_column(String(610), nullable=True, default="")
+    game_path: Mapped[str | None] = mapped_column(
+        String(610), nullable=True, default=""
+    )
     background_path: Mapped[str | None] = mapped_column(String(610), nullable=True)
     version: Mapped[str | None] = mapped_column(String(100), nullable=True)
     crypto_key: Mapped[str | None] = mapped_column(String(100), nullable=True)

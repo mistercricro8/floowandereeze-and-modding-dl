@@ -1423,7 +1423,9 @@ class QualityOfLifeTests(unittest.TestCase):
             check.assert_called_once()
         page.close()
 
-    def test_clearing_and_setting_game_path_does_not_fail_not_null_or_poison_session(self):
+    def test_clearing_and_setting_game_path_does_not_fail_not_null_or_poison_session(
+        self,
+    ):
         from pages.config import Config
 
         page = Config()

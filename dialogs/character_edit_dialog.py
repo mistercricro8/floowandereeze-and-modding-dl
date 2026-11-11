@@ -715,7 +715,9 @@ class CharacterEditDialog(QDialog):
         def replace(bundle):
             if APP_CONFIG.create_backup:
                 backup = (
-                    get_backups_dir() / self.service.subfolder / f"{slugify(bundle)}.png"
+                    get_backups_dir()
+                    / self.service.subfolder
+                    / f"{slugify(bundle)}.png"
                 )
                 if not backup.is_file():
                     self.service.create_backup(bundle)

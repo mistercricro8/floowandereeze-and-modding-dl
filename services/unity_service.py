@@ -7,7 +7,7 @@ Yu-Gi-Oh! Duel Links.
 """
 
 from abc import ABC, abstractmethod
-from os.path import isfile, join
+from os.path import join
 from pathlib import Path
 from shutil import copyfile
 

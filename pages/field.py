@@ -145,7 +145,9 @@ class Field(QtWidgets.QWidget, Ui_Field):
         has_disk_backup = False
         if has_field and getattr(self.selected, "medium_bundle", None):
             backup_path = (
-                get_backups_dir() / "fields" / f"{slugify(self.selected.medium_bundle)}.png"
+                get_backups_dir()
+                / "fields"
+                / f"{slugify(self.selected.medium_bundle)}.png"
             )
             has_disk_backup = backup_path.is_file()
 

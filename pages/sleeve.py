@@ -155,7 +155,9 @@ class Sleeve(QtWidgets.QWidget, Ui_Sleeve):
         has_disk_backup = False
         if has_sleeve and self.selected.medium_bundle:
             backup_path = (
-                get_backups_dir() / "sleeves" / f"{slugify(self.selected.medium_bundle)}.png"
+                get_backups_dir()
+                / "sleeves"
+                / f"{slugify(self.selected.medium_bundle)}.png"
             )
             has_disk_backup = backup_path.is_file()
 
@@ -460,7 +462,9 @@ class Sleeve(QtWidgets.QWidget, Ui_Sleeve):
         if not self.selected:
             return
         backup_path = (
-            get_backups_dir() / "sleeves" / f"{slugify(self.selected.medium_bundle)}.png"
+            get_backups_dir()
+            / "sleeves"
+            / f"{slugify(self.selected.medium_bundle)}.png"
         )
         status_text = (
             "Backup: Saved"

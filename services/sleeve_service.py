@@ -70,7 +70,9 @@ class SleeveService(UnityService):
 
         target_file = getattr(env, "file", None)
         if target_file is None or not hasattr(target_file, "save"):
-            raise ValueError(f"Game file {self.bundle!r} could not be saved as a Unity bundle.")
+            raise ValueError(
+                f"Game file {self.bundle!r} could not be saved as a Unity bundle."
+            )
         saved_bytes = target_file.save(packer=get_configured_packer(APP_CONFIG))
         with open(f_path, "wb") as f:
             f.write(saved_bytes)

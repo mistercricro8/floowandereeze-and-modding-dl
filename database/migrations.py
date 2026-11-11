@@ -5,8 +5,8 @@ when users update to a new version of the application.
 """
 
 import logging
-from pathlib import Path
 import sqlite3
+from pathlib import Path
 
 from util.paths import get_database_path
 
