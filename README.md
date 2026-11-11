@@ -1,6 +1,6 @@
 # Floowandereeze & Modding - Duel Links
 
-A modding tool for Yu-Gi-Oh! Duel Links, built with PySide6 (Qt6) for Windows.
+A modding tool for Yu-Gi-Oh! Duel Links, built with PySide6 (Qt6) for Windows and Linux.
 
 ## 🚧 Under Development 🚧
 
@@ -16,6 +16,7 @@ A modding tool for Yu-Gi-Oh! Duel Links, built with PySide6 (Qt6) for Windows.
 [![SQLAlchemy](https://img.shields.io/badge/SQLAlchemy-2-29B6F6.svg?logo=sqlalchemy&logoColor=white)](https://www.sqlalchemy.org)
 [![UnityPy](https://img.shields.io/badge/UnityPy-1-000000.svg?logo=unity&logoColor=white)](https://github.com/K0lb3/UnityPy)
 [![Windows](https://img.shields.io/badge/Windows-10+-0078D6.svg?logo=windows&logoColor=white)](https://www.microsoft.com/windows)
+[![Linux](https://img.shields.io/badge/Linux-Proton%20%2F%20Native-FCC624.svg?logo=linux&logoColor=black)](https://www.kernel.org)
 
 ## Table of Contents
 
@@ -24,6 +25,7 @@ A modding tool for Yu-Gi-Oh! Duel Links, built with PySide6 (Qt6) for Windows.
 - [Installation](#installation)
 - [Usage](#usage)
 - [Documentation](docs/index.md)
+- [Changelog](CHANGELOG.md)
 - [Project Structure](#project-structure)
 - [Development](#development)
 - [Building](#building)
@@ -45,7 +47,7 @@ A modding tool for Yu-Gi-Oh! Duel Links, built with PySide6 (Qt6) for Windows.
 
 ## Requirements
 
-- Windows 10 or later
+- Windows 10 or later, or Linux (native / Proton)
 - Python 3.12 or later (uv installs it automatically if missing)
 - [uv](https://docs.astral.sh/uv/getting-started/installation/) for dependency management
 - Yu-Gi-Oh! Duel Links installed with the in-game download

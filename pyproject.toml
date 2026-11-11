@@ -1,6 +1,6 @@
 [project]
 name = "floowandereeze-and-modding-dl"
-version = "0.1.0"
+version = "1.1.0"
 description = "A modding tool for Yu-Gi-Oh! Duel Links, built with PySide6 (Qt6)."
 readme = "README.md"
 requires-python = ">=3.12,<3.14"
