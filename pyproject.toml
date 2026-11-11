@@ -60,6 +60,7 @@ exclude = [
 
 [tool.ruff.lint]
 select = ["E", "F", "UP", "B", "SIM", "I"]
+ignore = ["E501"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["database", "dialogs", "pages", "scripts", "services", "tests", "unity", "util", "widgets"]

@@ -1,9 +1,9 @@
 """Character editing dialog module."""
 
+import logging
 from pathlib import Path
 
 from PIL.ImageQt import fromqimage
-from pyqttoast import ToastPreset
 from PySide6.QtCore import QSize, Qt
 from PySide6.QtGui import QDragEnterEvent, QDropEvent, QGuiApplication, QIcon, QPixmap
 from PySide6.QtWidgets import (
@@ -19,8 +19,8 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QListWidget,
     QListWidgetItem,
-    QMessageBox,
     QPushButton,
+    QSizePolicy,
     QSplitter,
     QStackedWidget,
     QVBoxLayout,
@@ -38,8 +38,11 @@ from util.constants import (
 )
 from util.enums import CharaAssetType
 from util.image_utils import slugify
-from util.ui_util import open_in_file_manager, show_toast
+from util.ui_util import open_in_file_manager
 from widgets.crop_overlay_widget import CropOverlayWidget
+from widgets.inline_alert import attach_inline_alert, notify
+
+logger = logging.getLogger(__name__)
 
 _BTN_STYLE = FIT_MODE_BUTTON_STYLE
 
@@ -68,6 +71,8 @@ class CharacterEditDialog(QDialog):
     def _setup_ui(self):
         """Setup the dialog UI layout."""
         layout = QVBoxLayout(self)
+
+        attach_inline_alert(self, layout)
 
         header_layout = QHBoxLayout()
 
@@ -103,17 +108,20 @@ class CharacterEditDialog(QDialog):
         left_layout.setContentsMargins(0, 0, 0, 0)
         left_frame.setMinimumWidth(220)
 
-        filter_label = QLabel("Filter by type:")
+        filter_label = QLabel("Filter by category:")
         left_layout.addWidget(filter_label)
 
         self.filter_combo = QComboBox()
-        self.filter_combo.addItem("All Assets", "all")
-        self.filter_combo.addItem("Duel Assets", "duel")
-        self.filter_combo.addItem("Dialog Assets", "dialog")
+        self.filter_combo.addItem("All Images", "all")
+        self.filter_combo.addItem("Duel Artwork", "duel")
+        self.filter_combo.addItem("Dialogue Expressions", "dialog")
         self.filter_combo.addItem("Miscellaneous", "misc")
+        self.filter_combo.setToolTip(
+            "Filter the list by category (duel, dialogue, or misc)."
+        )
         left_layout.addWidget(self.filter_combo)
 
-        assets_label = QLabel("Character Assets:")
+        assets_label = QLabel("Character Images:")
         left_layout.addWidget(assets_label)
 
         self.asset_list = QListWidget()
@@ -122,15 +130,28 @@ class CharacterEditDialog(QDialog):
         )
         self.asset_list.setIconSize(QSize(64, 64))
         left_layout.addWidget(self.asset_list)
+
+        self.asset_error_label = QLabel(self)
+        self.asset_error_label.setObjectName("assetErrorLabel")
+        self.asset_error_label.setStyleSheet("color: #a93226; font-size: 11px;")
+        self.asset_error_label.setWordWrap(True)
+        self.asset_error_label.setVisible(False)
+        left_layout.addWidget(self.asset_error_label)
+
         selection_layout = QHBoxLayout()
         self.select_all_btn = QPushButton("Select All")
-        self.clear_selection_btn = QPushButton("Clear")
+        self.select_all_btn.setToolTip("Select all character images in the list.")
+        self.clear_selection_btn = QPushButton("Clear Selection")
+        self.clear_selection_btn.setToolTip(
+            "Deselect all character images in the list."
+        )
         selection_layout.addWidget(self.select_all_btn)
         selection_layout.addWidget(self.clear_selection_btn)
         left_layout.addLayout(selection_layout)
-        self.selection_label = QLabel("0 assets selected")
+
+        self.selection_label = QLabel("0 images selected")
         left_layout.addWidget(self.selection_label)
-        selection_hint = QLabel("Use Ctrl or Shift to select multiple assets.")
+        selection_hint = QLabel("Use Ctrl or Shift to select multiple images.")
         selection_hint.setWordWrap(True)
         left_layout.addWidget(selection_hint)
 
@@ -147,14 +168,14 @@ class CharacterEditDialog(QDialog):
         previews_layout.addLayout(replacement_layout)
         right_layout.addLayout(previews_layout)
 
-        preview_label = QLabel("Asset Preview:")
+        preview_label = QLabel("Current Image:")
         current_layout.addWidget(preview_label)
 
         self.current_preview = QLabel()
         self.current_preview.setFixedSize(256, 256)
         self.current_preview.setStyleSheet("border: 1px solid gray;")
         self.current_preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.current_preview.setText("Select an asset to preview")
+        self.current_preview.setText("Select an image to preview")
         current_layout.addWidget(self.current_preview, 0, Qt.AlignmentFlag.AlignHCenter)
 
         image_label = QLabel("Replacement Image:")
@@ -166,14 +187,24 @@ class CharacterEditDialog(QDialog):
         self.image_path_edit.setPlaceholderText(
             "No replacement image selected (browse or drag & drop)..."
         )
+        self.image_path_edit.setToolTip("Path to your replacement image file.")
         image_layout.addWidget(self.image_path_edit)
 
         self.select_image_btn = QPushButton("Select Image...")
-        self.select_image_btn.setToolTip("Select replacement art (PNG, JPG)")
+        self.select_image_btn.setToolTip(
+            "Browse your computer for a PNG or JPG replacement image."
+        )
         self.select_image_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         image_layout.addWidget(self.select_image_btn)
 
         right_layout.addLayout(image_layout)
+
+        self.image_error_label = QLabel(self)
+        self.image_error_label.setObjectName("imageErrorLabel")
+        self.image_error_label.setStyleSheet("color: #a93226; font-size: 11px;")
+        self.image_error_label.setWordWrap(True)
+        self.image_error_label.setVisible(False)
+        right_layout.addWidget(self.image_error_label)
 
         fit_layout = QHBoxLayout()
         fit_layout.addWidget(QLabel("Fit Mode:"))
@@ -183,6 +214,9 @@ class CharacterEditDialog(QDialog):
         self._stretch_btn.setChecked(True)
         self._stretch_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._stretch_btn.setStyleSheet(_BTN_STYLE)
+        self._stretch_btn.setToolTip(
+            "Stretches the image to fit the game boundary completely."
+        )
 
         self._crop_btn = QPushButton("Crop")
         self._crop_btn.setCheckable(True)
@@ -190,8 +224,7 @@ class CharacterEditDialog(QDialog):
         self._crop_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._crop_btn.setStyleSheet(_BTN_STYLE)
         self._crop_btn.setToolTip(
-            "For multiple assets, each aspect ratio is fitted inside the "
-            "shared crop area."
+            "Preserves image proportions and lets you crop a specific area."
         )
 
         fit_layout.addWidget(self._stretch_btn)
@@ -206,23 +239,22 @@ class CharacterEditDialog(QDialog):
         right_layout.addLayout(fit_layout)
 
         self.preserve_padding_checkbox = QCheckBox(
-            "Preserve original transparent padding"
+            "Preserve original transparent margins"
         )
         self.preserve_padding_checkbox.setChecked(True)
         self.preserve_padding_checkbox.setToolTip(
-            "In Crop mode, fit to the original visible content and restore "
-            "its transparent margins. Turn off to use the full texture area."
+            "Keeps transparent margins so dialogue expressions stay centered."
         )
         right_layout.addWidget(self.preserve_padding_checkbox)
 
-        new_preview_label = QLabel("New Image Preview:")
+        new_preview_label = QLabel("Replacement Preview:")
         replacement_layout.addWidget(new_preview_label)
 
         self.new_preview = QLabel()
         self.new_preview.setFixedSize(256, 256)
         self.new_preview.setStyleSheet("border: 1px solid gray;")
         self.new_preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.new_preview.setText("No image selected")
+        self.new_preview.setText("No replacement image selected")
 
         self._crop_widget = CropOverlayWidget()
         self._crop_widget.setFixedSize(256, 256)
@@ -247,23 +279,34 @@ class CharacterEditDialog(QDialog):
         button_layout = QHBoxLayout()
         button_layout.addStretch()
 
-        self.extract_btn = QPushButton("Extract Asset")
+        self.extract_btn = QPushButton("Extract Image")
         self.extract_btn.setEnabled(False)
-        self.extract_btn.setToolTip("Extract selected texture(s) to images/characters/")
+        self.extract_btn.setToolTip(
+            "Extracts selected character images to images/characters/."
+        )
         button_layout.addWidget(self.extract_btn)
 
-        self.replace_btn = QPushButton("Replace Asset")
+        self.replace_btn = QPushButton("Apply Mod")
         self.replace_btn.setEnabled(False)
-        self.replace_btn.setToolTip("Replace selected texture(s) in game files")
+        self.replace_btn.setToolTip(
+            "Applies your replacement image to game files. A backup is saved first."
+        )
         button_layout.addWidget(self.replace_btn)
 
-        self.restore_btn = QPushButton("Restore Asset")
+        self.restore_btn = QPushButton("Restore Original")
         self.restore_btn.setEnabled(False)
-        self.restore_btn.setToolTip("Restore selected texture(s) from backups")
+        self.restore_btn.setToolTip(
+            "Restores selected character images back to original game artwork."
+        )
         button_layout.addWidget(self.restore_btn)
 
         close_btn = QPushButton("Close")
+        close_btn.setToolTip("Close the character editor.")
         button_layout.addWidget(close_btn)
+
+        for btn in (self.extract_btn, self.replace_btn, self.restore_btn, close_btn):
+            btn.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed)
+            btn.setMinimumWidth(btn.fontMetrics().horizontalAdvance(btn.text()) + 20)
 
         layout.addLayout(button_layout)
 
@@ -320,11 +363,23 @@ class CharacterEditDialog(QDialog):
 
         self._update_replace_button_state()
         if not pixmap.isNull():
-            show_toast(
+            self.image_error_label.clear()
+            self.image_error_label.setVisible(False)
+            notify(
                 self,
+                "info",
                 "Image Selected",
                 f"Loaded {Path(path).name} ({pixmap.width()}×{pixmap.height()})",
-                ToastPreset.INFORMATION_DARK,
+            )
+        else:
+            logger.warning("Failed to load image from %s", path)
+            self.image_error_label.setText("Could not load image file.")
+            self.image_error_label.setVisible(True)
+            notify(
+                self,
+                "error",
+                "Image Error",
+                f"Could not load image: {Path(path).name}",
             )
 
     def _connect_signals(self):
@@ -384,7 +439,7 @@ class CharacterEditDialog(QDialog):
 
         if asset_type.name.startswith("DIALOG_"):
             dialog_num = asset_type.name.split("_")[1]
-            return f"Dialog Expression {dialog_num}"
+            return f"Dialogue Expression {dialog_num}"
 
         return name_map.get(asset_type, asset_type.name.replace("_", " ").title())
 
@@ -413,6 +468,7 @@ class CharacterEditDialog(QDialog):
                 try:
                     item.setIcon(fetch_bundle_thumb(bundle, None))
                 except Exception:
+                    logger.exception("Failed to load icon for %s", bundle)
                     item.setIcon(QIcon())
 
                 self.asset_list.addItem(item)
@@ -429,21 +485,48 @@ class CharacterEditDialog(QDialog):
     def _on_selection_changed(self):
         items = self.asset_list.selectedItems()
         count = len(items)
-        self.selection_label.setText(f"{count} assets selected")
+        self.selection_label.setText(
+            f"{count} image{'s' if count != 1 else ''} selected"
+        )
         for button, verb in (
             (self.extract_btn, "Extract"),
             (self.replace_btn, "Replace"),
             (self.restore_btn, "Restore"),
         ):
-            button.setText(f"{verb} {count} Assets" if count > 1 else f"{verb} Asset")
+            button.setText(f"{verb} {count} Images" if count > 1 else f"{verb} Image")
+
+        if count > 0:
+            self.extract_btn.setToolTip(
+                f"Extracts {count} selected character image{'s' if count != 1 else ''} to images/characters/."
+            )
+            self.restore_btn.setToolTip(
+                f"Restores {count} selected character image{'s' if count != 1 else ''} back to original game art."
+            )
+            self.replace_btn.setToolTip(
+                f"Replaces {count} selected character image{'s' if count != 1 else ''} in game files."
+            )
+            self.asset_error_label.clear()
+            self.asset_error_label.setVisible(False)
+        else:
+            self.extract_btn.setToolTip(
+                "Extracts selected character images to images/characters/."
+            )
+            self.restore_btn.setToolTip(
+                "Restores selected character images back to original game artwork."
+            )
+            self.replace_btn.setToolTip(
+                "Applies your replacement image to game files. A backup is saved first."
+            )
+
         if items:
             current = self.asset_list.currentItem()
             self._on_asset_selected(current if current in items else items[0])
             return
+
         self.selected_asset_bundle = None
         self.service.bundle = None
         self._asset_ratio = None
-        self.current_preview.setText("Select an asset to preview")
+        self.current_preview.setText("Select an image to preview")
         self.extract_btn.setEnabled(False)
         self.restore_btn.setEnabled(False)
         self._crop_btn.setEnabled(False)
@@ -472,7 +555,10 @@ class CharacterEditDialog(QDialog):
                         Qt.TransformationMode.SmoothTransformation,
                     )
                 )
+            else:
+                self.current_preview.setText("Preview not available")
         except Exception:
+            logger.exception("Failed to load preview for game file %s", bundle)
             self.current_preview.setText("Preview not available")
 
         multiple = len(self.asset_list.selectedItems()) > 1
@@ -508,11 +594,23 @@ class CharacterEditDialog(QDialog):
         has_asset = bool(self.selected_asset_bundle)
         self.replace_btn.setEnabled(has_image and has_asset)
 
-    def _run_asset_action(self, title, action):
+    def _run_asset_action(self, title: str, action):
         """Apply an action to the selection and report partial failures together."""
         bundles = self._selected_bundles()
         if not bundles:
+            self.asset_error_label.setText("Select at least one image from the list.")
+            self.asset_error_label.setVisible(True)
+            notify(
+                self,
+                "warning",
+                "Selection Required",
+                "Please select at least one character image from the list.",
+            )
             return
+
+        self.asset_error_label.clear()
+        self.asset_error_label.setVisible(False)
+
         succeeded = 0
         errors = []
         image_path, crop_rect = self.service.image_path, self.service.crop_rect
@@ -524,7 +622,10 @@ class CharacterEditDialog(QDialog):
                     action(bundle)
                     succeeded += 1
                 except Exception as error:
-                    errors.append(f"{bundle}: {error}")
+                    logger.exception(
+                        "Failed to run action '%s' on game file '%s'", title, bundle
+                    )
+                    errors.append(f"{bundle} ({error})")
                 finally:
                     self.service.image_path = image_path
                     self.service.crop_rect = crop_rect
@@ -536,7 +637,8 @@ class CharacterEditDialog(QDialog):
             _, bundle = item.data(Qt.ItemDataRole.UserRole)
             try:
                 icon = fetch_bundle_thumb(bundle, None)
-                item.setIcon(icon)
+                if icon:
+                    item.setIcon(icon)
                 if (
                     bundle == self.selected_asset_bundle
                     and icon
@@ -551,34 +653,61 @@ class CharacterEditDialog(QDialog):
                         )
                     )
             except Exception:
-                pass
+                logger.exception("Failed to update thumbnail for %s", bundle)
+
         if errors:
-            QMessageBox.warning(
-                self,
-                title,
-                f"Completed {succeeded} of {len(bundles)} assets.\n\n"
-                + "\n".join(errors),
-            )
+            failed_str = ", ".join(errors)
+            if succeeded > 0:
+                logger.warning(
+                    "%s completed partially: %d succeeded, %d failed",
+                    title,
+                    succeeded,
+                    len(errors),
+                )
+                notify(
+                    self,
+                    "warning",
+                    f"{title} Partial Success",
+                    f"Completed {succeeded} of {len(bundles)} game files. Failed: {failed_str}",
+                )
+            else:
+                logger.error(
+                    "%s failed completely for %d game files: %s",
+                    title,
+                    len(bundles),
+                    failed_str,
+                )
+                notify(
+                    self,
+                    "error",
+                    f"{title} Failed",
+                    f"Failed all {len(bundles)} game files: {failed_str}",
+                )
         else:
-            show_toast(
-                self, title, f"Completed {succeeded} asset(s)", ToastPreset.SUCCESS_DARK
+            notify(
+                self,
+                "success",
+                title,
+                f"Successfully completed {succeeded} game file{'s' if succeeded != 1 else ''}.",
             )
 
     def _extract_asset(self):
-        """Extract every selected asset to the characters folder."""
-        self._run_asset_action("Character Extraction", self.service.extract_texture)
+        """Extract every selected image to the characters folder."""
+        self._run_asset_action("Image Extraction", self.service.extract_texture)
         dest = Path("images/characters")
         if dest.is_dir():
             open_in_file_manager(dest)
 
     def _replace_asset(self):
-        """Replace selected assets using the same image and crop area."""
+        """Replace selected images using the same replacement image and crop."""
         if not self.service.image_path:
-            show_toast(
+            self.image_error_label.setText("Select a replacement image first.")
+            self.image_error_label.setVisible(True)
+            notify(
                 self,
-                "Character Replacement",
-                "Please select a replacement image first.",
-                ToastPreset.WARNING_DARK,
+                "warning",
+                "Image Required",
+                "Please select a replacement image before applying changes.",
             )
             return
 
@@ -593,16 +722,16 @@ class CharacterEditDialog(QDialog):
                 session.commit()
             self.service.replace_bundle()
 
-        self._run_asset_action("Character Replacement", replace)
+        self._run_asset_action("Apply Mod", replace)
 
     def _restore_asset(self):
-        """Restore every selected asset that has a backup."""
+        """Restore every selected image that has a backup."""
 
         def restore(_bundle):
             if not self.service.restore_asset():
-                raise FileNotFoundError("Asset backup not found")
+                raise FileNotFoundError("Backup file not found")
 
-        self._run_asset_action("Character Restore", restore)
+        self._run_asset_action("Restore Original", restore)
 
     def dragEnterEvent(self, event: QDragEnterEvent) -> None:
         """Accept drag and drop of image files."""

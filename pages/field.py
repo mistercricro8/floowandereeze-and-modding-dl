@@ -1,6 +1,6 @@
+import logging
 from pathlib import Path
 
-from pyqttoast import ToastPreset
 from PySide6 import QtWidgets
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QDragEnterEvent, QDropEvent, QGuiApplication, QPixmap
@@ -10,6 +10,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QPushButton,
+    QSizePolicy,
     QStackedWidget,
 )
 
@@ -29,12 +30,13 @@ from util.image_utils import slugify
 from util.ui_util import (
     format_actionable_error,
     open_in_file_manager,
-    show_actionable_error_dialog,
-    show_toast,
 )
 from widgets.crop_overlay_widget import CropOverlayWidget
 from widgets.image_viewer import ImageViewer
+from widgets.inline_alert import notify
 from widgets.responsive_editor import ResponsiveEditor
+
+logger = logging.getLogger(__name__)
 
 _FIELD_CROP_RATIO = 2.0
 _BTN_STYLE = FIT_MODE_BUTTON_STYLE
@@ -47,6 +49,8 @@ class Field(QtWidgets.QWidget, Ui_Field):
 
         self.service = FieldService()
         self.model = FieldListModel()
+        self.model.filter = ""
+        self.model.refresh()
         self.fieldsView.setModel(self.model)
         self.selected = None
 
@@ -70,30 +74,52 @@ class Field(QtWidgets.QWidget, Ui_Field):
     def _init_descriptive_controls(self) -> None:
         """Set clear, descriptive labels, tooltips, and initial states."""
         self.selectButton.setText("Select Image...")
-        self.selectButton.setToolTip("Select replacement art for playmat (PNG, JPG)")
+        self.selectButton.setToolTip(
+            "Browse your computer for an image (PNG or JPG) to use on this playmat."
+        )
         self.selectButton.setCursor(Qt.CursorShape.PointingHandCursor)
         self.assetEdit.setPlaceholderText(
             "No replacement image selected (browse or drag & drop)..."
         )
+        self.assetEdit.setToolTip(
+            "Path of the selected replacement image. You can also drag and drop an image onto the preview box."
+        )
         self.replaceButton.setText("Apply Mod")
-        self.replaceButton.setToolTip("Select an image to enable replacing field art")
+        self.replaceButton.setToolTip(
+            "Select or drop a replacement image first to enable applying this mod."
+        )
         self.replaceButton.setEnabled(False)
 
         self.restoreButton = QPushButton("Restore Original", self)
         self.restoreButton.setObjectName("restoreButton")
         self.restoreButton.setEnabled(False)
         self.restoreButton.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.restoreButton.setToolTip("Revert playmat art to original backup")
+        self.restoreButton.setToolTip(
+            "No backup saved yet. Original game art is backed up automatically when you first apply a mod."
+        )
         self.restoreButton.clicked.connect(self._restore)
         idx = self.horizontalLayout_4.indexOf(self.replaceButton)
         self.horizontalLayout_4.insertWidget(idx, self.restoreButton)
 
-        self.extractButton.setText("Extract Texture (PNG)")
-        self.extractButton.setToolTip("Extract current field texture to images/fields/")
+        self.extractButton.setText("Extract Artwork")
+        self.extractButton.setToolTip(
+            "Extracts the current in-game playmat artwork to a PNG file in images/fields/."
+        )
         self.extractButton.setEnabled(False)
-        self.copyButton.setText("Export Game Bundle")
-        self.copyButton.setToolTip("Export raw Unity bundle file to bundles/fields/")
+        self.copyButton.setText("Export Game File")
+        self.copyButton.setToolTip(
+            "Exports the raw game file to bundles/fields/ for advanced modding or manual archiving."
+        )
         self.copyButton.setEnabled(False)
+
+        for btn in (
+            self.restoreButton,
+            self.extractButton,
+            self.copyButton,
+            self.replaceButton,
+        ):
+            btn.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed)
+            btn.setMinimumWidth(btn.fontMetrics().horizontalAdvance(btn.text()) + 20)
 
     def _update_action_states(self) -> None:
         """Deterministically update button states and descriptive tooltips."""
@@ -103,11 +129,16 @@ class Field(QtWidgets.QWidget, Ui_Field):
             self.replaceButton.setEnabled(has_field and has_image)
             if not has_image:
                 self.replaceButton.setToolTip(
-                    "Select or drop a replacement image first"
+                    "Select or drop a replacement image first to enable applying this mod."
+                )
+            elif not has_field:
+                self.replaceButton.setToolTip(
+                    "Select a playmat from the list to enable applying this mod."
                 )
             else:
+                name = asset_name(self.selected)
                 self.replaceButton.setToolTip(
-                    "Replace field art in game files with selected image"
+                    f"Replaces '{name}' in game files with your image. Original art is backed up first."
                 )
 
         has_disk_backup = False
@@ -120,16 +151,38 @@ class Field(QtWidgets.QWidget, Ui_Field):
         if hasattr(self, "restoreButton"):
             self.restoreButton.setEnabled(has_disk_backup)
             if has_disk_backup:
-                self.restoreButton.setToolTip("Revert playmat art to original backup")
+                name = asset_name(self.selected)
+                self.restoreButton.setToolTip(
+                    f"Restores '{name}' back to the original game art from your saved backup."
+                )
             else:
                 self.restoreButton.setToolTip(
-                    "No backup available yet (will be created automatically on mod)"
+                    "No backup saved yet. Original game art is backed up automatically when you first apply a mod."
                 )
 
         if hasattr(self, "extractButton"):
             self.extractButton.setEnabled(has_field)
+            if has_field:
+                name = asset_name(self.selected)
+                self.extractButton.setToolTip(
+                    f"Extracts '{name}' in-game artwork to a PNG file in images/fields/."
+                )
+            else:
+                self.extractButton.setToolTip(
+                    "Select a playmat from the list to extract its artwork."
+                )
+
         if hasattr(self, "copyButton"):
             self.copyButton.setEnabled(has_field)
+            if has_field:
+                name = asset_name(self.selected)
+                self.copyButton.setToolTip(
+                    f"Exports the raw game file for '{name}' to bundles/fields/."
+                )
+            else:
+                self.copyButton.setToolTip(
+                    "Select a playmat from the list to export its game file."
+                )
 
     def _init_current_viewer(self) -> None:
         """Replace self.current QLabel with an ImageViewer (preserves aspect ratio)."""
@@ -155,6 +208,7 @@ class Field(QtWidgets.QWidget, Ui_Field):
         old_preview.deleteLater()
 
         stretch_viewer = ImageViewer()
+        stretch_viewer.setObjectName("preview")
         stretch_viewer.setMaximumSize(max_size)
         stretch_viewer.setMinimumSize(100, 50)
         self.preview = stretch_viewer
@@ -181,11 +235,17 @@ class Field(QtWidgets.QWidget, Ui_Field):
         self._stretch_btn.setChecked(True)
         self._stretch_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._stretch_btn.setStyleSheet(_BTN_STYLE)
+        self._stretch_btn.setToolTip(
+            "Stretches the image across the entire playmat surface."
+        )
 
         self._crop_btn = QPushButton("Crop")
         self._crop_btn.setCheckable(True)
         self._crop_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._crop_btn.setStyleSheet(_BTN_STYLE)
+        self._crop_btn.setToolTip(
+            "Preserves image proportions and lets you select the visible playmat area."
+        )
 
         fit_layout.addWidget(self._stretch_btn)
         fit_layout.addWidget(self._crop_btn)
@@ -211,6 +271,8 @@ class Field(QtWidgets.QWidget, Ui_Field):
             if self.service.image_path:
                 self._crop_widget.set_image(self.service.image_path, _FIELD_CROP_RATIO)
                 self.service.crop_rect = self._crop_widget.get_crop_rect_normalized()
+            else:
+                self.service.crop_rect = None
             self._mode_stack.setCurrentIndex(1)
         else:
             self.service.crop_rect = None
@@ -219,27 +281,43 @@ class Field(QtWidgets.QWidget, Ui_Field):
     def _on_crop_changed(self) -> None:
         if self._crop_mode:
             self.service.crop_rect = self._crop_widget.get_crop_rect_normalized()
-
-    def _load_image(self, path: str) -> None:
-        self.assetEdit.setText(path)
-        self.service.image_path = path
-        pixmap = QPixmap(path)
-        self.preview.setPixmap(pixmap)
-        if self._crop_mode:
-            self._crop_widget.set_image(path, _FIELD_CROP_RATIO)
-            self.service.crop_rect = self._crop_widget.get_crop_rect_normalized()
-            self._mode_stack.setCurrentIndex(1)
         else:
             self.service.crop_rect = None
-            self._mode_stack.setCurrentIndex(0)
-        self._update_action_states()
-        if not pixmap.isNull():
-            show_toast(
+
+    def _load_image(self, path: str) -> None:
+        try:
+            self.assetEdit.setText(path)
+            self.service.image_path = path
+            pixmap = QPixmap(path)
+            if pixmap.isNull():
+                logger.error("Failed to load image from %s", path)
+                notify(
+                    self,
+                    "error",
+                    "Invalid Image",
+                    f"Could not load image from '{Path(path).name}'. Please select a valid file.",
+                )
+                self._update_action_states()
+                return
+            self.preview.setPixmap(pixmap)
+            if self._crop_mode:
+                self._crop_widget.set_image(path, _FIELD_CROP_RATIO)
+                self.service.crop_rect = self._crop_widget.get_crop_rect_normalized()
+                self._mode_stack.setCurrentIndex(1)
+            else:
+                self.service.crop_rect = None
+                self._mode_stack.setCurrentIndex(0)
+            self._update_action_states()
+            notify(
                 self,
-                "Image Selected",
-                f"Loaded {Path(path).name} ({pixmap.width()}×{pixmap.height()})",
-                ToastPreset.INFORMATION_DARK,
+                "info",
+                "Image Loaded",
+                f"Loaded {Path(path).name} ({pixmap.width()}×{pixmap.height()}).",
             )
+        except Exception as error:
+            logger.exception("Error loading replacement image: %s", error)
+            notify(self, "error", "Image Error", f"Failed to load image: {error}")
+            self._update_action_states()
 
     def _connect_callbacks(self):
         self.fieldsView.clicked.connect(self._on_field_clicked)
@@ -255,7 +333,7 @@ class Field(QtWidgets.QWidget, Ui_Field):
             Path("backups/fields") / f"{slugify(self.selected.medium_bundle)}.png"
         )
         status_text = (
-            "Backup: Secured"
+            "Backup: Saved"
             if backup_path.is_file()
             else "Backup: Will auto-create on mod"
         )
@@ -263,16 +341,30 @@ class Field(QtWidgets.QWidget, Ui_Field):
             self.bundle.setText(f"Editing {asset_name(self.selected)}\n{status_text}")
 
     def _on_field_clicked(self, index):
+        if not index.isValid() or not (0 <= index.row() < len(self.model.fields)):
+            return
         self.selected = self.model.fields[index.row()]
-
-        self.current.setPixmap(
-            fetch_bundle_thumb(self.selected.medium_bundle, (1024, 512)).pixmap(
-                1024, 512
+        try:
+            thumb = fetch_bundle_thumb(self.selected.medium_bundle, (1024, 512))
+            if thumb is not None and hasattr(thumb, "pixmap"):
+                self.current.setPixmap(thumb.pixmap(1024, 512))
+            else:
+                logger.warning(
+                    "Thumbnail unavailable for playmat %s",
+                    getattr(self.selected, "medium_bundle", "unknown"),
+                )
+        except Exception as error:
+            logger.exception("Failed to load playmat preview: %s", error)
+            notify(
+                self,
+                "error",
+                "Preview Error",
+                "Could not load preview image for selected playmat.",
             )
-        )
+
         self.service.bundle = self.selected.medium_bundle
         self._update_field_status()
-        self.label.setText(f"Fields - {asset_name(self.selected)}")
+        self.label.setText(f"Playmats - {asset_name(self.selected)}")
         self._update_action_states()
 
     def _select_image(self):
@@ -285,11 +377,11 @@ class Field(QtWidgets.QWidget, Ui_Field):
 
     def _restore(self):
         if not self.selected:
-            show_toast(
+            notify(
                 self,
-                "Field Restore",
-                "Please select a field from the list first.",
-                ToastPreset.WARNING_DARK,
+                "warning",
+                "Restore Unavailable",
+                "Please select a playmat from the list first.",
             )
             return
 
@@ -299,41 +391,50 @@ class Field(QtWidgets.QWidget, Ui_Field):
         try:
             restored = False
             for bundle in [self.selected.small_bundle, self.selected.medium_bundle]:
+                if not bundle:
+                    continue
                 self.service.bundle = bundle
                 if self.service.restore_asset():
                     restored = True
             if restored:
                 self.model.refresh()
-                self.current.setPixmap(
-                    fetch_field_thumb(self.selected).pixmap(768, 267)
-                )
-                show_toast(
+                try:
+                    thumb = fetch_field_thumb(self.selected)
+                    if thumb is not None and hasattr(thumb, "pixmap"):
+                        self.current.setPixmap(thumb.pixmap(768, 267))
+                except Exception as thumb_err:
+                    logger.exception(
+                        "Failed to refresh playmat thumbnail: %s", thumb_err
+                    )
+                notify(
                     self,
-                    "Field Restored",
-                    f"Restored '{asset_name(self.selected)}' to original art.",
-                    ToastPreset.SUCCESS_DARK,
+                    "success",
+                    "Playmat Restored",
+                    f"Restored '{asset_name(self.selected)}' to original artwork.",
                 )
                 self._update_field_status()
             else:
-                show_toast(
+                notify(
                     self,
-                    "Field Restore",
+                    "warning",
+                    "Restore Unavailable",
                     f"No backup found for '{asset_name(self.selected)}'.",
-                    ToastPreset.WARNING_DARK,
                 )
         except Exception as error:
-            summary, hint = format_actionable_error(error, "restoring field backup")
-            show_actionable_error_dialog(
-                self, "Restore Error", summary, hint, str(error)
-            )
+            logger.exception("Failed to restore playmat backup: %s", error)
+            summary, hint = format_actionable_error(error, "restoring playmat backup")
+            notify(self, "error", summary, hint)
         finally:
             QGuiApplication.restoreOverrideCursor()
             self._update_action_states()
 
     def _extract_texture(self):
         if not self.selected:
-            show_toast(
-                self, "Extraction", "Select a field first.", ToastPreset.WARNING_DARK
+            notify(
+                self,
+                "warning",
+                "Extraction Unavailable",
+                "Select a playmat from the list first.",
             )
             return
 
@@ -341,25 +442,27 @@ class Field(QtWidgets.QWidget, Ui_Field):
         try:
             self.service.extract_texture(self.service.bundle)
             dest = Path("images/fields") / f"{slugify(self.service.bundle)}.png"
-            show_toast(
+            notify(
                 self,
-                "Texture Extracted",
-                f"Texture extracted to {dest}",
-                ToastPreset.SUCCESS_DARK,
+                "success",
+                "Artwork Extracted",
+                f"Extracted artwork to {dest}.",
             )
             open_in_file_manager(dest)
         except Exception as error:
-            summary, hint = format_actionable_error(error, "extracting field texture")
-            show_actionable_error_dialog(
-                self, "Extraction Error", summary, hint, str(error)
-            )
+            logger.exception("Failed to extract playmat artwork: %s", error)
+            summary, hint = format_actionable_error(error, "extracting playmat artwork")
+            notify(self, "error", summary, hint)
         finally:
             QGuiApplication.restoreOverrideCursor()
 
     def _copy(self):
         if not self.selected:
-            show_toast(
-                self, "Export", "Select a field first.", ToastPreset.WARNING_DARK
+            notify(
+                self,
+                "warning",
+                "Export Unavailable",
+                "Select a playmat from the list first.",
             )
             return
 
@@ -367,50 +470,65 @@ class Field(QtWidgets.QWidget, Ui_Field):
         try:
             self.service.copy_bundle()
             dest = Path("bundles/fields") / self.service.bundle
-            show_toast(
+            notify(
                 self,
-                "Bundle Exported",
-                f"Raw bundle copied to {dest}",
-                ToastPreset.SUCCESS_DARK,
+                "success",
+                "Game File Exported",
+                f"Exported game file to {dest}.",
             )
             open_in_file_manager(dest)
         except Exception as error:
-            summary, hint = format_actionable_error(error, "exporting field bundle")
-            show_actionable_error_dialog(
-                self, "Export Error", summary, hint, str(error)
+            logger.exception("Failed to export playmat game file: %s", error)
+            summary, hint = format_actionable_error(
+                error, "exporting playmat game file"
             )
+            notify(self, "error", summary, hint)
         finally:
             QGuiApplication.restoreOverrideCursor()
 
     def _replace(self):
         if not self.selected:
-            show_toast(
+            notify(
                 self,
-                "Field Mod",
-                "Please select a field from the list first.",
-                ToastPreset.WARNING_DARK,
+                "warning",
+                "Modification Unavailable",
+                "Please select a playmat from the list first.",
             )
             return
         if not self.service.image_path:
-            show_toast(
+            notify(
                 self,
-                "Field Mod",
+                "warning",
+                "Modification Unavailable",
                 "Please select a replacement image first.",
-                ToastPreset.WARNING_DARK,
             )
             return
 
         bundles = [self.selected.small_bundle, self.selected.medium_bundle]
         if APP_CONFIG.create_backup:
-            for bundle in bundles:
-                backup = (
-                    Path("backups") / self.service.subfolder / f"{slugify(bundle)}.png"
+            try:
+                for bundle in bundles:
+                    if not bundle:
+                        continue
+                    backup = (
+                        Path("backups")
+                        / self.service.subfolder
+                        / f"{slugify(bundle)}.png"
+                    )
+                    if not backup.is_file():
+                        self.service.bundle = bundle
+                        self.service.create_backup(bundle)
+                self.model.set_backup_state(self.selected.id, True)
+                session.commit()
+            except Exception as error:
+                logger.exception(
+                    "Failed to create safety backup for playmat: %s", error
                 )
-                if not backup.is_file():
-                    self.service.bundle = bundle
-                    self.service.create_backup(bundle)
-            self.model.set_backup_state(self.selected.id, True)
-            session.commit()
+                summary, hint = format_actionable_error(
+                    error, "creating safety backup for playmat"
+                )
+                notify(self, "error", summary, hint)
+                return
 
         if hasattr(self, "replaceButton"):
             self.replaceButton.setText("Applying Mod...")
@@ -418,25 +536,33 @@ class Field(QtWidgets.QWidget, Ui_Field):
         QGuiApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
         try:
             for bundle in bundles:
+                if not bundle:
+                    continue
                 self.service.bundle = bundle
                 self.service.replace_bundle()
 
             self.model.refresh()
-            self.current.setPixmap(fetch_field_thumb(self.selected).pixmap(768, 267))
+            try:
+                thumb = fetch_field_thumb(self.selected)
+                if thumb is not None and hasattr(thumb, "pixmap"):
+                    self.current.setPixmap(thumb.pixmap(768, 267))
+            except Exception as thumb_err:
+                logger.exception("Failed to refresh playmat thumbnail: %s", thumb_err)
 
-            show_toast(
+            notify(
                 self,
-                "Field Mod Applied",
-                f"Modded '{asset_name(self.selected)}'.",
-                ToastPreset.SUCCESS_DARK,
+                "success",
+                "Playmat Mod Applied",
+                f"Updated '{asset_name(self.selected)}'. Original artwork is backed up.",
             )
             if hasattr(self, "_update_field_status"):
                 self._update_field_status()
         except Exception as error:
-            summary, hint = format_actionable_error(error, "modifying field bundle")
-            show_actionable_error_dialog(
-                self, "Mod Application Error", summary, hint, str(error)
+            logger.exception("Failed to modify playmat game file: %s", error)
+            summary, hint = format_actionable_error(
+                error, "modifying playmat game file"
             )
+            notify(self, "error", summary, hint)
         finally:
             QGuiApplication.restoreOverrideCursor()
             if hasattr(self, "replaceButton"):

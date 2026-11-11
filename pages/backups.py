@@ -9,6 +9,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from services.backup_service import CATEGORY_LABELS, BackupService, sync_backup_flags
 from util.ui_util import open_in_file_manager
+from widgets.inline_alert import attach_inline_alert, notify
 
 logger = logging.getLogger(__name__)
 
@@ -186,6 +187,15 @@ class Backups(QtWidgets.QWidget):
         super().__init__()
         self.service = service or BackupService()
         layout = QtWidgets.QVBoxLayout(self)
+        attach_inline_alert(self, layout)
+
+        self._pending_delete_armed = False
+        self._pending_delete_names: list[str] = []
+        self._delete_disarm_timer = QtCore.QTimer(self)
+        self._delete_disarm_timer.setSingleShot(True)
+        self._delete_disarm_timer.setInterval(5000)
+        self._delete_disarm_timer.timeout.connect(self._disarm_delete)
+
         title = QtWidgets.QLabel("Backups")
         title.setStyleSheet("font-size: 22px; font-weight: 600;")
         layout.addWidget(title)
@@ -202,31 +212,31 @@ class Backups(QtWidgets.QWidget):
             (
                 "Refresh",
                 "refreshButton",
-                "Rescan the local backups folder",
+                "Scans the backups folder and updates the list of saved files.",
                 self.refresh,
             ),
             (
                 "Open Backups Folder",
                 "openFolderButton",
-                "Open the backups directory in the system file manager",
+                "Opens the backups folder in your system file manager.",
                 self._open_backups_folder,
             ),
             (
                 "Export ZIP…",
                 "exportButton",
-                "Export selected backups into a ZIP archive",
+                "Saves your selected backup files into a portable ZIP archive for safekeeping or sharing.",
                 self._export,
             ),
             (
                 "Import ZIP…",
                 "importButton",
-                "Import backups from an existing ZIP archive",
+                "Restores original backup files from a ZIP archive into your backups folder.",
                 self._import,
             ),
             (
                 "Remove backups…",
                 "clearButton",
-                "Permanently remove selected backups",
+                "Permanently deletes selected backup files from your computer to free up space.",
                 self._delete,
             ),
         ):
@@ -243,6 +253,13 @@ class Backups(QtWidgets.QWidget):
         layout.addWidget(self.status)
         self.refresh()
 
+    def _disarm_delete(self):
+        if self._pending_delete_armed:
+            self._pending_delete_armed = False
+            self._pending_delete_names = []
+            if self.status.text().startswith("Click Remove again"):
+                self.status.setText("")
+
     def _open_backups_folder(self):
         folder = (
             Path(self.service.root)
@@ -251,7 +268,10 @@ class Backups(QtWidgets.QWidget):
         )
         folder.mkdir(parents=True, exist_ok=True)
         open_in_file_manager(folder)
-        self.status.setText(f"Opened backups folder: {folder.resolve()}")
+        msg = f"Opened backups folder: {folder.resolve()}"
+        logger.info(msg)
+        self.status.setText(msg)
+        notify(self, "info", "Backups Folder", msg)
 
     def showEvent(self, event):
         """Refresh files whenever the user opens this tab."""
@@ -260,6 +280,7 @@ class Backups(QtWidgets.QWidget):
 
     def refresh(self):
         """Rescan the backup folder."""
+        self._disarm_delete()
         try:
             self.picker.set_entries(self.service.inventory())
         except (OSError, ValueError) as error:
@@ -268,16 +289,15 @@ class Backups(QtWidgets.QWidget):
     def _error(self, error):
         logger.error("Backup operation failed: %s", error)
         self.status.setText(f"Backup operation failed: {error}")
-        QtWidgets.QMessageBox.warning(self, "Backups", str(error))
+        notify(self, "error", "Backups Error", str(error))
 
     def _names(self):
         names = self.picker.names()
         if not names:
-            QtWidgets.QMessageBox.information(
-                self,
-                "Backups",
-                "Choose a category or select backups for this action.",
-            )
+            msg = "Choose a category or select backups for this action."
+            logger.error("Backup operation aborted: %s", msg)
+            self.status.setText(msg)
+            notify(self, "warning", "Backups", msg)
         return names
 
     def _changed(self):
@@ -320,28 +340,37 @@ class Backups(QtWidgets.QWidget):
             path += ".zip"
         try:
             count = self.service.export_archive(path, names)
-            self.status.setText(f"Exported {count} backups to {path}")
+            msg = f"Exported {count} backups to {path}."
+            logger.info(msg)
+            self.status.setText(msg)
+            notify(self, "success", "Export Complete", msg)
         except (OSError, ValueError, BadZipFile, RuntimeError) as error:
             self._error(error)
 
     def _delete(self):
         names = self._names()
         if not names:
+            self._disarm_delete()
             return
-        answer = QtWidgets.QMessageBox.question(
-            self,
-            "Remove backups",
-            f"Permanently remove {len(names)} backups? "
-            "Export them first if you may need them again.",
-            QtWidgets.QMessageBox.StandardButton.Yes
-            | QtWidgets.QMessageBox.StandardButton.No,
-            QtWidgets.QMessageBox.StandardButton.No,
-        )
-        if answer != QtWidgets.QMessageBox.StandardButton.Yes:
+
+        if not self._pending_delete_armed or self._pending_delete_names != names:
+            self._pending_delete_armed = True
+            self._pending_delete_names = list(names)
+            msg = f"Click Remove again to delete {len(names)} backups"
+            self.status.setText(msg)
+            notify(self, "warning", "Confirm Removal", msg)
+            self._delete_disarm_timer.start(5000)
             return
+
+        self._delete_disarm_timer.stop()
+        self._pending_delete_armed = False
+        self._pending_delete_names = []
         try:
             count = self.service.delete(names)
-            self.status.setText(f"Removed {count} backups.")
+            msg = f"Removed {count} backups."
+            logger.info(msg)
+            self.status.setText(msg)
+            notify(self, "success", "Backups Removed", msg)
         except (OSError, ValueError) as error:
             self._error(error)
         finally:
@@ -394,13 +423,18 @@ class Backups(QtWidgets.QWidget):
                     QtWidgets.QMessageBox.StandardButton.No,
                 )
                 if answer == QtWidgets.QMessageBox.StandardButton.Cancel:
+                    logger.info("Backup import cancelled by user on conflict prompt.")
                     return
-                overwrite = answer == QtWidgets.QMessageBox.StandardButton.Yes
+                elif answer == QtWidgets.QMessageBox.StandardButton.Yes:
+                    overwrite = True
+                else:
+                    overwrite = False
             try:
                 count, skipped = self.service.import_archive(path, names, overwrite)
-                self.status.setText(
-                    f"Imported {count} backups; kept {skipped} existing backups."
-                )
+                msg = f"Imported {count} backups; kept {skipped} existing backups."
+                logger.info(msg)
+                self.status.setText(msg)
+                notify(self, "success", "Import Complete", msg)
             finally:
                 self._changed()
         except (OSError, ValueError, BadZipFile, RuntimeError) as error:

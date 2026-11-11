@@ -1,6 +1,8 @@
+"""Card management page module."""
+
+import logging
 from pathlib import Path
 
-from pyqttoast import ToastPreset
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QDragEnterEvent, QDropEvent, QGuiApplication, QPixmap
 from PySide6.QtWidgets import (
@@ -10,6 +12,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QPushButton,
+    QSizePolicy,
     QStackedWidget,
     QWidget,
 )
@@ -19,7 +22,7 @@ from database.objects import session
 from pages.models.card_list_model import CardListModel
 from pages.ui.card import Ui_Card
 from services.card_service import CardService
-from unity.unity_utils import fetch_bundle_thumb
+from unity.unity_utils import card_art_bundle, fetch_bundle_thumb
 from util.constants import (
     FIT_MODE_BUTTON_STYLE,
     IMAGE_EXTENSIONS,
@@ -30,18 +33,21 @@ from util.image_utils import slugify
 from util.ui_util import (
     format_actionable_error,
     open_in_file_manager,
-    show_actionable_error_dialog,
-    show_toast,
 )
 from widgets.crop_overlay_widget import CropOverlayWidget
 from widgets.image_viewer import ImageViewer
+from widgets.inline_alert import attach_inline_alert, notify
 from widgets.responsive_editor import ResponsiveEditor
+
+logger = logging.getLogger(__name__)
 
 _CARD_CROP_RATIO = 1.0
 _BTN_STYLE = FIT_MODE_BUTTON_STYLE
 
 
 class Card(QWidget, Ui_Card):
+    """Card management page widget."""
+
     def __init__(self):
         super().__init__()
         self.setupUi(self)
@@ -65,32 +71,69 @@ class Card(QWidget, Ui_Card):
 
         self.setAcceptDrops(True)
 
+        attach_inline_alert(self, self.verticalLayout)
         self._connect_callbacks()
         self._init_descriptive_controls()
+        self.model.filter = ""
+        self.model.refresh()
 
     def _init_descriptive_controls(self) -> None:
-        """Set clear, descriptive labels, tooltips, and initial states."""
+        """Set clear, plain-language labels, tooltips, and initial states."""
+        self.bundle.setText("Select a card from the list below to begin editing.")
         self.selectButton.setText("Select Image...")
-        self.selectButton.setToolTip("Select replacement art (PNG, JPG)")
+        self.selectButton.setToolTip(
+            "Browse your computer for a PNG or JPG image to replace card artwork."
+        )
         self.selectButton.setCursor(Qt.CursorShape.PointingHandCursor)
         self.cardEdit.setPlaceholderText(
             "No replacement image selected (browse or drag & drop)..."
         )
+        self.cardEdit.setToolTip(
+            "File path of your replacement image. Drag and drop is also supported."
+        )
         self.replaceButton.setText("Apply Mod")
-        self.replaceButton.setToolTip("Select an image to enable replacing card art")
+        self.replaceButton.setToolTip(
+            "Select or drop a replacement image first to enable applying this mod."
+        )
         self.replaceButton.setEnabled(False)
         self.restoreButton.setText("Restore Original")
-        self.restoreButton.setToolTip("Restore card art from original backup")
+        self.restoreButton.setToolTip(
+            "No backup saved yet. Original art is backed up when you apply a mod."
+        )
         self.restoreButton.setEnabled(False)
-        self.extractButton.setText("Extract Texture (PNG)")
-        self.extractButton.setToolTip("Extract current card texture to images/cards/")
+        self.extractButton.setText("Extract Artwork")
+        self.extractButton.setToolTip(
+            "Extracts current in-game artwork to a PNG file in images/cards/."
+        )
         self.extractButton.setEnabled(False)
-        self.copyButton.setText("Export Game Bundle")
-        self.copyButton.setToolTip("Export raw Unity bundle file to bundles/cards/")
+        self.copyButton.setText("Export Game File")
+        self.copyButton.setToolTip(
+            "Copies the game file to bundles/cards/ for modding or archiving."
+        )
         self.copyButton.setEnabled(False)
         self.searchButton.setText("Search")
-        self.searchButton.setToolTip("Search card names (minimum 3 characters)")
-        self.searchEdit.setPlaceholderText("Search cards (min 3 chars)...")
+        self.searchButton.setToolTip("Finds cards matching your search query.")
+        self.searchEdit.setPlaceholderText("Search cards by name...")
+        self.searchEdit.setToolTip(
+            "Type part of a card name and click Search or press Enter."
+        )
+        self.favorite.setText("Favorite")
+        self.favorite.setToolTip(
+            "Pins this card to your favorites for quick filtering later."
+        )
+        self.favorites.setText("Favorites")
+        self.favorites.setToolTip(
+            "Filters the card list to display only your favorite cards."
+        )
+
+        for btn in (
+            self.restoreButton,
+            self.extractButton,
+            self.copyButton,
+            self.replaceButton,
+        ):
+            btn.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed)
+            btn.setMinimumWidth(btn.fontMetrics().horizontalAdvance(btn.text()) + 20)
 
     def _update_action_states(self) -> None:
         """Update button states and tooltips based on current selection."""
@@ -98,31 +141,52 @@ class Card(QWidget, Ui_Card):
         has_image = bool(self.service.image_path)
         self.replaceButton.setEnabled(has_card and has_image)
         if not has_image:
-            self.replaceButton.setToolTip("Select or drop a replacement image first")
+            self.replaceButton.setToolTip(
+                "Select or drop a replacement image first to enable applying this mod."
+            )
+        elif not has_card:
+            self.replaceButton.setToolTip(
+                "Select a card from the list to enable applying this mod."
+            )
         else:
             self.replaceButton.setToolTip(
-                "Replace card art in game files with selected image"
+                f"Replaces artwork for '{self.selected.name}'. Original is backed up."
             )
 
         has_disk_backup = False
-        if has_card and self.selected.large_bundle:
-            backup_path = (
-                Path("backups/cards") / f"{slugify(self.selected.large_bundle)}.png"
-            )
+        if has_card:
+            bundle, _ = card_art_bundle(self.selected)
+            backup_path = Path("backups/cards") / f"{slugify(bundle)}.png"
             has_disk_backup = backup_path.is_file()
 
         self.restoreButton.setEnabled(has_disk_backup)
         if has_disk_backup:
-            self.restoreButton.setToolTip("Revert card art to original backup")
+            self.restoreButton.setToolTip(
+                f"Restores '{self.selected.name}' to original game art from backup."
+            )
         else:
             self.restoreButton.setToolTip(
-                "No backup available yet (will be created automatically when modding)"
+                "No backup saved yet. Original art is backed up when you apply a mod."
             )
 
         self.extractButton.setEnabled(has_card)
-        self.copyButton.setEnabled(
-            has_card and not getattr(self.selected, "unity_file", False)
-        )
+        if has_card:
+            self.extractButton.setToolTip(
+                f"Extracts artwork for '{self.selected.name}' to images/cards/."
+            )
+        else:
+            self.extractButton.setToolTip("Select a card to extract its artwork.")
+
+        can_copy = has_card and not getattr(self.selected, "unity_file", False)
+        self.copyButton.setEnabled(can_copy)
+        if can_copy:
+            self.copyButton.setToolTip(
+                f"Exports game file for '{self.selected.name}' to bundles/cards/."
+            )
+        elif has_card:
+            self.copyButton.setToolTip("This card game file cannot be exported.")
+        else:
+            self.copyButton.setToolTip("Select a card to export its game file.")
 
     def _init_current_viewer(self) -> None:
         """Replace self.current QLabel with an ImageViewer (preserves aspect ratio)."""
@@ -174,11 +238,17 @@ class Card(QWidget, Ui_Card):
         self._stretch_btn.setChecked(True)
         self._stretch_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._stretch_btn.setStyleSheet(_BTN_STYLE)
+        self._stretch_btn.setToolTip(
+            "Stretches the image to completely fill the card art boundary."
+        )
 
         self._crop_btn = QPushButton("Crop")
         self._crop_btn.setCheckable(True)
         self._crop_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._crop_btn.setStyleSheet(_BTN_STYLE)
+        self._crop_btn.setToolTip(
+            "Keeps image proportions and lets you frame the area to use."
+        )
 
         fit_layout.addWidget(self._stretch_btn)
         fit_layout.addWidget(self._crop_btn)
@@ -228,11 +298,19 @@ class Card(QWidget, Ui_Card):
             self._mode_stack.setCurrentIndex(0)
         self._update_action_states()
         if not pixmap.isNull():
-            show_toast(
+            notify(
                 self,
+                "info",
                 "Image Selected",
                 f"Loaded {Path(path).name} ({pixmap.width()}×{pixmap.height()})",
-                ToastPreset.INFORMATION_DARK,
+            )
+        else:
+            logger.warning("Selected image could not be loaded: %s", path)
+            notify(
+                self,
+                "error",
+                "Image Error",
+                f"Could not load image from {Path(path).name}.",
             )
 
     def dragEnterEvent(self, event: QDragEnterEvent) -> None:
@@ -262,50 +340,90 @@ class Card(QWidget, Ui_Card):
         self.restoreButton.clicked.connect(self._restore)
         self.searchEdit.returnPressed.connect(self._search)
         self.searchEdit.setClearButtonEnabled(True)
-        self.searchEdit.setPlaceholderText("Search cards, min 3 characters")
         self.searchEdit.textChanged.connect(self._search_text_changed)
         self.favorite.stateChanged.connect(self._toggle_favorite)
         self.favorites.stateChanged.connect(self._toggle_favorites_filter)
 
-        self.searchEdit.setCompleter(QCompleter(self.service.get_names()))
-        self.searchEdit.completer().setCaseSensitivity(
-            Qt.CaseSensitivity.CaseInsensitive
-        )
-        self.searchEdit.completer().setFilterMode(Qt.MatchFlag.MatchContains)
-        self.searchEdit.completer().activated.connect(self._search)
+        completer = QCompleter(self.service.get_names(), self)
+        completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+        completer.setFilterMode(Qt.MatchFlag.MatchContains)
+        self.searchEdit.setCompleter(completer)
+        completer.activated.connect(self._search)
 
     def _toggle_favorite(self, state):
         if self.selected and self.selected.favorite != (
             state == Qt.CheckState.Checked.value
         ):
             self.selected.favorite = state == Qt.CheckState.Checked.value
-            session.commit()
-            show_toast(
-                self,
-                "Favorite",
-                "Card favorite status updated",
-                ToastPreset.SUCCESS_DARK,
-            )
+            try:
+                session.commit()
+                status_text = (
+                    "added to favorites"
+                    if self.selected.favorite
+                    else "removed from favorites"
+                )
+                notify(
+                    self,
+                    "success",
+                    "Favorite Updated",
+                    f"Card '{self.selected.name}' {status_text}.",
+                )
+            except Exception as error:
+                logger.exception(
+                    "Failed to update favorite status for card %s", self.selected.name
+                )
+                session.rollback()
+                notify(
+                    self,
+                    "error",
+                    "Database Error",
+                    f"Could not update favorite status: {error}",
+                )
 
     def _toggle_favorites_filter(self, state):
         self.model.show_favorites = state == Qt.CheckState.Checked.value
-        if self.model.show_favorites:
-            self.model.refresh()
-            self.model.layoutChanged.emit()
-        else:
-            self.model.filter = (
-                self.searchEdit.text() if len(self.searchEdit.text()) >= 3 else ""
+        try:
+            if self.model.show_favorites:
+                self.model.refresh()
+                self.model.layoutChanged.emit()
+                count = self.model.rowCount()
+                notify(
+                    self,
+                    "info",
+                    "Filter",
+                    f"Showing {count} favorite card{'s' if count != 1 else ''}.",
+                )
+            else:
+                self.model.filter = (
+                    self.searchEdit.text().strip()
+                    if len(self.searchEdit.text().strip()) >= 3
+                    else ""
+                )
+                self.model.refresh()
+                self.model.layoutChanged.emit()
+                count = self.model.rowCount()
+                notify(
+                    self,
+                    "info",
+                    "Filter",
+                    f"Showing all {count} cards.",
+                )
+        except Exception as error:
+            logger.exception("Failed to toggle favorites filter")
+            notify(
+                self,
+                "error",
+                "Filter Error",
+                f"Failed to update card filter: {error}",
             )
-            self.model.refresh()
-            self.model.layoutChanged.emit()
 
     def _restore(self):
         if not self.selected:
-            show_toast(
+            notify(
                 self,
+                "warning",
                 "Card Restore",
                 "Please select a card from the list first.",
-                ToastPreset.WARNING_DARK,
             )
             return
 
@@ -314,61 +432,85 @@ class Card(QWidget, Ui_Card):
         try:
             if self.service.restore_asset():
                 self.model.refresh()
-                self.current.setPixmap(
-                    fetch_bundle_thumb(
-                        self.selected.large_bundle,
-                        (374, 374),
-                        self.selected.unity_file,
-                        CardArtCoordinates.LARGE.value,
-                    ).pixmap(374, 374)
+                bundle, coords = card_art_bundle(self.selected)
+                thumb = fetch_bundle_thumb(
+                    bundle,
+                    (374, 374),
+                    self.selected.unity_file,
+                    coords.value,
                 )
-                show_toast(
+                self.current.setPixmap(thumb.pixmap(374, 374) if thumb else QPixmap())
+                notify(
                     self,
+                    "success",
                     "Card Restored",
-                    f"Restored '{self.selected.name}' to original game art.",
-                    ToastPreset.SUCCESS_DARK,
+                    f"Restored '{self.selected.name}' to original game artwork.",
                 )
-                self._update_action_states()
+                backup_path = Path("backups/cards") / f"{slugify(bundle)}.png"
+                status_text = (
+                    "Backup: Saved"
+                    if backup_path.is_file()
+                    else "Backup: Will auto-create on mod"
+                )
+                quality = (
+                    "High quality"
+                    if coords is CardArtCoordinates.LARGE
+                    else "Standard quality"
+                )
+                self.bundle.setText(
+                    f"Editing {self.selected.name} ({quality}, game file: {bundle})\n"
+                    f"{status_text}"
+                )
             else:
-                show_toast(
+                notify(
                     self,
+                    "warning",
                     "Card Restore",
                     f"No backup found for '{self.selected.name}'.",
-                    ToastPreset.WARNING_DARK,
                 )
         except Exception as error:
+            logger.exception("Failed to restore card %s", self.selected.name)
             summary, hint = format_actionable_error(error, "restoring original card")
-            show_actionable_error_dialog(
-                self, "Restore Error", summary, hint, str(error)
-            )
+            notify(self, "error", "Restore Error", f"{summary}\n{hint}")
         finally:
             QGuiApplication.restoreOverrideCursor()
             self._update_action_states()
 
     def _on_card_clicked(self, index):
+        if not index.isValid() or not (0 <= index.row() < len(self.model.assets)):
+            return
         self.selected = self.model.assets[index.row()]
+        bundle, coords = card_art_bundle(self.selected)
 
-        self.current.setPixmap(
-            fetch_bundle_thumb(
-                self.selected.large_bundle,
+        try:
+            thumb = fetch_bundle_thumb(
+                bundle,
                 (374, 374),
                 self.selected.unity_file,
-                CardArtCoordinates.LARGE.value,
-            ).pixmap(374, 374)
-        )
-        self.service.bundle = self.selected.large_bundle
+                coords.value,
+            )
+            if thumb:
+                self.current.setPixmap(thumb.pixmap(374, 374))
+            else:
+                self.current.setPixmap(QPixmap())
+        except Exception:
+            logger.exception("Failed to load thumbnail for card %s", self.selected.name)
+            self.current.setPixmap(QPixmap())
+
+        self.service.bundle = bundle
         self.service.unity_file = self.selected.unity_file
 
-        backup_path = (
-            Path("backups/cards") / f"{slugify(self.selected.large_bundle)}.png"
-        )
+        backup_path = Path("backups/cards") / f"{slugify(bundle)}.png"
         status_text = (
-            "Backup: Secured"
+            "Backup: Saved"
             if backup_path.is_file()
             else "Backup: Will auto-create on mod"
         )
+        quality = (
+            "High quality" if coords is CardArtCoordinates.LARGE else "Standard quality"
+        )
         self.bundle.setText(
-            f"Editing {self.selected.name} ({self.selected.large_bundle})\n"
+            f"Editing {self.selected.name} ({quality}, game file: {bundle})\n"
             f"{status_text}"
         )
 
@@ -386,14 +528,19 @@ class Card(QWidget, Ui_Card):
 
     def _copy(self):
         if not self.selected:
-            show_toast(self, "Export", "Select a card first.", ToastPreset.WARNING_DARK)
+            notify(
+                self,
+                "warning",
+                "Game File Export",
+                "Please select a card from the list first.",
+            )
             return
         if self.service.unity_file:
-            show_toast(
+            notify(
                 self,
-                "Bundle Export",
-                "Cannot export Unity3D card bundle.",
-                ToastPreset.WARNING_DARK,
+                "warning",
+                "Game File Export",
+                "Cannot export this type of game file.",
             )
             return
 
@@ -401,25 +548,29 @@ class Card(QWidget, Ui_Card):
         try:
             self.service.copy_bundle()
             dest = Path("bundles/cards") / self.service.bundle
-            show_toast(
+            notify(
                 self,
-                "Bundle Exported",
-                f"Raw bundle copied to {dest}",
-                ToastPreset.SUCCESS_DARK,
+                "success",
+                "Game File Exported",
+                f"Game file copied to {dest}",
             )
             open_in_file_manager(dest)
         except Exception as error:
-            summary, hint = format_actionable_error(error, "exporting game bundle")
-            show_actionable_error_dialog(
-                self, "Export Error", summary, hint, str(error)
+            logger.exception(
+                "Failed to export game file for card %s", self.selected.name
             )
+            summary, hint = format_actionable_error(error, "exporting game file")
+            notify(self, "error", "Export Error", f"{summary}\n{hint}")
         finally:
             QGuiApplication.restoreOverrideCursor()
 
     def _extract_texture(self):
         if not self.selected:
-            show_toast(
-                self, "Extraction", "Select a card first.", ToastPreset.WARNING_DARK
+            notify(
+                self,
+                "warning",
+                "Artwork Extraction",
+                "Please select a card from the list first.",
             )
             return
 
@@ -427,53 +578,53 @@ class Card(QWidget, Ui_Card):
         try:
             self.service.extract_texture(self.service.bundle)
             dest = Path("images/cards") / f"{slugify(self.service.bundle)}.png"
-            show_toast(
+            notify(
                 self,
-                "Texture Extracted",
-                f"Texture extracted to {dest}",
-                ToastPreset.SUCCESS_DARK,
+                "success",
+                "Artwork Extracted",
+                f"Artwork extracted to {dest}",
             )
             open_in_file_manager(dest)
         except Exception as error:
-            summary, hint = format_actionable_error(error, "extracting card texture")
-            show_actionable_error_dialog(
-                self, "Extraction Error", summary, hint, str(error)
+            logger.exception(
+                "Failed to extract artwork for card %s", self.selected.name
             )
+            summary, hint = format_actionable_error(error, "extracting card artwork")
+            notify(self, "error", "Extraction Error", f"{summary}\n{hint}")
         finally:
             QGuiApplication.restoreOverrideCursor()
 
     def _replace(self):
         if not self.selected:
-            show_toast(
+            notify(
                 self,
+                "warning",
                 "Card Mod",
                 "Please select a card from the list first.",
-                ToastPreset.WARNING_DARK,
             )
             return
         if not self.service.image_path:
-            show_toast(
+            notify(
                 self,
+                "warning",
                 "Card Mod",
                 "Please select a replacement image first.",
-                ToastPreset.WARNING_DARK,
             )
             return
 
-        # Safe-by-default: ensure original backup exists before modifying bundle
-        backup_path = (
-            Path("backups/cards") / f"{slugify(self.selected.large_bundle)}.png"
-        )
+        bundle, coords = card_art_bundle(self.selected)
+        backup_path = Path("backups/cards") / f"{slugify(bundle)}.png"
         if not backup_path.is_file():
             try:
                 self.service.create_backup(self.service.bundle)
                 self.model.set_backup_state(self.selected.id, True)
                 session.commit()
             except Exception as error:
-                summary, hint = format_actionable_error(error, "creating safety backup")
-                show_actionable_error_dialog(
-                    self, "Backup Protection Failed", summary, hint, str(error)
+                logger.exception(
+                    "Failed to create safety backup for card %s", self.selected.name
                 )
+                summary, hint = format_actionable_error(error, "creating safety backup")
+                notify(self, "error", "Backup Protection Failed", f"{summary}\n{hint}")
                 return
 
         QGuiApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
@@ -482,66 +633,102 @@ class Card(QWidget, Ui_Card):
         try:
             self.service.replace_bundle()
             self.model.refresh()
-            self.current.setPixmap(
-                fetch_bundle_thumb(
-                    self.service.bundle,
-                    (374, 374),
-                    self.service.unity_file,
-                    CardArtCoordinates.LARGE.value,
-                ).pixmap(374, 374)
+            thumb = fetch_bundle_thumb(
+                self.service.bundle,
+                (374, 374),
+                self.service.unity_file,
+                coords.value,
             )
-            show_toast(
+            self.current.setPixmap(thumb.pixmap(374, 374) if thumb else QPixmap())
+            notify(
                 self,
+                "success",
                 "Card Mod Applied",
-                f"Replaced art for '{self.selected.name}'. Original is backed up.",
-                ToastPreset.SUCCESS_DARK,
+                f"Replaced artwork for '{self.selected.name}'. Original is backed up.",
             )
-            backup_path = (
-                Path("backups/cards") / f"{slugify(self.selected.large_bundle)}.png"
-            )
+            backup_path = Path("backups/cards") / f"{slugify(bundle)}.png"
             status_text = (
-                "Backup: Secured"
+                "Backup: Saved"
                 if backup_path.is_file()
                 else "Backup: Will auto-create on mod"
             )
+            quality = (
+                "High quality"
+                if coords is CardArtCoordinates.LARGE
+                else "Standard quality"
+            )
             self.bundle.setText(
-                f"Editing {self.selected.name} ({self.selected.large_bundle})\n"
+                f"Editing {self.selected.name} ({quality}, game file: {bundle})\n"
                 f"{status_text}"
             )
         except Exception as error:
-            summary, hint = format_actionable_error(error, "modifying card bundle")
-            show_actionable_error_dialog(
-                self, "Mod Application Error", summary, hint, str(error)
+            logger.exception(
+                "Failed to modify game file for card %s", self.selected.name
             )
+            summary, hint = format_actionable_error(error, "modifying card game file")
+            notify(self, "error", "Mod Application Error", f"{summary}\n{hint}")
         finally:
             QGuiApplication.restoreOverrideCursor()
             self.replaceButton.setText("Apply Mod")
             self._update_action_states()
 
-    def _search_text_changed(self, text):
+    def _search_text_changed(self, text: str) -> None:
         if not text:
             self.model.filter = ""
-            self.model.refresh()
-            self.model.layoutChanged.emit()
-
-    def _search(self):
-        search_filter = self.searchEdit.text()
-
-        if not self.model.show_favorites:
-            if len(search_filter) >= 3:
-                self.model.filter = search_filter
+            try:
                 self.model.refresh()
                 self.model.layoutChanged.emit()
-                show_toast(
+            except Exception:
+                logger.exception("Failed to refresh model when search text cleared")
+            if hasattr(self, "inlineAlert"):
+                self.inlineAlert.clear()
+
+    def _search(self, activated_text=None, *_):
+        if isinstance(activated_text, str) and activated_text:
+            self.searchEdit.setText(activated_text)
+        search_filter = self.searchEdit.text().strip()
+
+        if self.model.show_favorites:
+            self.model.show_favorites = False
+            self.favorites.blockSignals(True)
+            self.favorites.setChecked(False)
+            self.favorites.blockSignals(False)
+
+        if not search_filter:
+            self.model.filter = ""
+            try:
+                self.model.refresh()
+                self.model.layoutChanged.emit()
+            except Exception:
+                logger.exception("Failed to refresh card model with empty query")
+            if hasattr(self, "inlineAlert"):
+                self.inlineAlert.clear()
+            return
+
+        self.model.filter = search_filter
+        try:
+            self.model.refresh()
+            self.model.layoutChanged.emit()
+            count = self.model.rowCount()
+            if count == 0:
+                notify(
                     self,
+                    "info",
                     "Search",
-                    f"Showing results matching '{search_filter}'",
-                    ToastPreset.INFORMATION_DARK,
+                    f"No cards found matching '{search_filter}'.",
                 )
             else:
-                show_toast(
+                notify(
                     self,
+                    "info",
                     "Search",
-                    "Please use 3 or more characters to search",
-                    ToastPreset.INFORMATION_DARK,
+                    f"Found {count} card{'s' if count != 1 else ''} matching '{search_filter}'.",
                 )
+        except Exception as error:
+            logger.exception("Card search failed for query '%s'", search_filter)
+            notify(
+                self,
+                "error",
+                "Search Error",
+                f"Failed to search cards: {error}",
+            )

@@ -23,6 +23,7 @@ QtCore.QSettings.setPath(
 
 from database.migrations import run_migrations
 from database.models import (
+    CardModel,
     CharacterAssetLayout,
     CharacterModel,
     FieldModel,
@@ -99,8 +100,6 @@ class QualityOfLifeTests(unittest.TestCase):
         self.assertEqual([c.konami_id for c in model.assets], [5])
 
     def test_character_search_controls_and_clear_filters(self):
-        from PySide6.QtTest import QTest
-
         session.add_all(
             [
                 CharacterModel(konami_id=1, name="Yugi", series="DM", favorite=True),
@@ -112,7 +111,8 @@ class QualityOfLifeTests(unittest.TestCase):
         page = Character()
         self.addCleanup(page.close)
         page.searchEdit.setText("yu")
-        QTest.qWait(300)
+        self.assertEqual([c.konami_id for c in page.model.assets], [2, 1, 3])
+        page.searchButton.click()
         self.assertEqual([c.konami_id for c in page.model.assets], [1, 3])
         page.seriesComboBox.setCurrentIndex(page.seriesComboBox.findData("DM"))
         page.favorites.setChecked(True)
@@ -122,7 +122,6 @@ class QualityOfLifeTests(unittest.TestCase):
         self.assertEqual(page.model.assets, [])
         page.clearFilterButton.click()
         self.assertEqual(page.searchEdit.text(), "")
-        self.assertFalse(page.searchTimer.isActive())
         self.assertFalse(page.favorites.isChecked())
         self.assertEqual([c.konami_id for c in page.model.assets], [2, 1, 3])
 
@@ -142,7 +141,7 @@ class QualityOfLifeTests(unittest.TestCase):
         _APP.processEvents()
         self.assertFalse(page.favorite.isEnabled())
 
-        with patch("pages.character.show_toast") as toast:
+        with patch("pages.character.notify") as notified:
             QTest.mouseClick(
                 page.charactersView.viewport(),
                 QtCore.Qt.MouseButton.LeftButton,
@@ -156,13 +155,13 @@ class QualityOfLifeTests(unittest.TestCase):
             self.assertTrue(
                 session.query(CharacterModel).filter_by(konami_id=1).one().favorite
             )
-            toast.assert_called_once()
+            notified.assert_called_once()
 
             page.charactersView.setFocus()
             QTest.keyClick(page.charactersView, QtCore.Qt.Key.Key_Right)
             self.assertEqual(page.selected.konami_id, 2)
             self.assertTrue(page.favorite.isChecked())
-            toast.assert_called_once()
+            notified.assert_called_once()
 
             page.favorite.click()
             session.expire_all()
@@ -182,7 +181,7 @@ class QualityOfLifeTests(unittest.TestCase):
         self.addCleanup(page.close)
         page.favorites.setChecked(True)
         page.charactersView.setCurrentIndex(page.model.index(0))
-        with patch("pages.character.show_toast"):
+        with patch("pages.character.notify"):
             page.favorite.click()
         self.assertEqual(page.model.assets, [])
         self.assertIsNone(page.selected)
@@ -455,8 +454,8 @@ class QualityOfLifeTests(unittest.TestCase):
             selected_area = dialog.service.crop_rect
             dialog.select_all_btn.click()
             self.assertEqual(len(dialog.asset_list.selectedItems()), 3)
-            self.assertEqual(dialog.selection_label.text(), "3 assets selected")
-            self.assertEqual(dialog.replace_btn.text(), "Replace 3 Assets")
+            self.assertEqual(dialog.selection_label.text(), "3 images selected")
+            self.assertEqual(dialog.replace_btn.text(), "Replace 3 Images")
             self.assertEqual(dialog.service.crop_rect, selected_area)
             self.assertIsNone(crop._target_ratio)
             dialog.asset_list.setCurrentItem(
@@ -474,7 +473,7 @@ class QualityOfLifeTests(unittest.TestCase):
             with (
                 patch("dialogs.character_edit_dialog.APP_CONFIG", create_backup=False),
                 patch.object(dialog.service, "replace_bundle", side_effect=replace),
-                patch("dialogs.character_edit_dialog.QMessageBox.warning") as warning,
+                patch("dialogs.character_edit_dialog.notify") as notified,
             ):
                 dialog.replace_btn.click()
             self.assertEqual(
@@ -482,8 +481,8 @@ class QualityOfLifeTests(unittest.TestCase):
             )
             self.assertTrue(all(rect == selected_area for _, rect in applied))
             self.assertEqual(dialog.service.bundle, dialog.selected_asset_bundle)
-            warning.assert_called_once()
-            self.assertIn("Completed 2 of 3", warning.call_args.args[2])
+            notified.assert_called_once()
+            self.assertIn("Completed 2 of 3", notified.call_args.args[3])
             dialog.filter_combo.setCurrentIndex(dialog.filter_combo.findData("duel"))
             self.assertFalse(dialog.replace_btn.isEnabled())
             self.assertIsNone(dialog.service.bundle)
@@ -873,6 +872,52 @@ class QualityOfLifeTests(unittest.TestCase):
         session.commit()
 
     def test_tabs_enable_without_restart_and_load_on_demand(self):
+        session.add(
+            CardModel(
+                name="seed",
+                large_bundle="tabseed01",
+                medium_bundle="tabseed02",
+                small_bundle="tabseed03",
+            )
+        )
+        session.add(
+            SleeveModel(
+                name="seed", small_bundle="tabseed04", medium_bundle="tabseed05"
+            )
+        )
+        session.add(
+            FieldModel(name="seed", small_bundle="tabseed06", medium_bundle="tabseed07")
+        )
+        session.add(CharacterModel(konami_id=999997, series="DM"))
+        session.commit()
+        self.addCleanup(
+            lambda: (
+                session.query(CardModel)
+                .filter(CardModel.small_bundle == "tabseed03")
+                .delete()
+            )
+        )
+        self.addCleanup(
+            lambda: (
+                session.query(SleeveModel)
+                .filter(SleeveModel.small_bundle == "tabseed04")
+                .delete()
+            )
+        )
+        self.addCleanup(
+            lambda: (
+                session.query(FieldModel)
+                .filter(FieldModel.small_bundle == "tabseed06")
+                .delete()
+            )
+        )
+        self.addCleanup(
+            lambda: (
+                session.query(CharacterModel)
+                .filter(CharacterModel.konami_id == 999997)
+                .delete()
+            )
+        )
         window = MainWindow(QtWidgets.QSplashScreen())
         self.assertFalse(window.actionsleeve_button.isEnabled())
         install = Path("tab-game")
@@ -880,7 +925,8 @@ class QualityOfLifeTests(unittest.TestCase):
         (install / "dlpc_Data/data.unity3d").touch()
         account = install / "LocalData/12345678"
         account.mkdir(exist_ok=True, parents=True)
-        window.config_page._set_game_path(str(account))
+        with patch.object(window.config_page, "_check_update"):
+            window.config_page._set_game_path(str(account))
         self.assertTrue(window.actionsleeve_button.isEnabled())
         self.assertEqual(window._loaded_pages, {0})
         window._activate_page(1)
@@ -888,11 +934,69 @@ class QualityOfLifeTests(unittest.TestCase):
         self.assertEqual(window._loaded_pages, {0, 1})
         window.close()
 
+    def test_tabs_stay_locked_until_card_data_downloaded(self):
+        window = MainWindow(QtWidgets.QSplashScreen())
+        self.addCleanup(window.close)
+        install = Path("locked-game")
+        (install / "dlpc_Data").mkdir(exist_ok=True, parents=True)
+        (install / "dlpc_Data/data.unity3d").touch()
+        account = install / "LocalData/12345678"
+        account.mkdir(exist_ok=True, parents=True)
+        with (
+            patch("pages.main_window.metadata_tables_empty", return_value=True),
+            patch.object(window.config_page, "_check_update"),
+        ):
+            window.config_page._set_game_path(str(account))
+            self.assertFalse(window.actionsleeve_button.isEnabled())
+            self.assertIn(
+                "Download card data",
+                window.actionsleeve_button.toolTip(),
+            )
+
+    def test_config_prompts_download_when_card_data_missing(self):
+        from pages.config import Config
+
+        with (
+            patch("pages.config.notify") as notified,
+            patch("pages.config.metadata_tables_empty", return_value=True),
+        ):
+            page = Config()
+            self.addCleanup(page.close)
+            self.assertEqual(page.updateButton.text(), "Download Card Data")
+            self.assertEqual(page.updateLine.text(), "Not downloaded yet")
+            notified.assert_called()
+            kinds = [args[1] for args, _ in notified.call_args_list]
+            self.assertIn("warning", kinds)
+
+    def test_config_restores_update_button_after_download(self):
+        from pages.config import Config
+
+        page = Config()
+        self.addCleanup(page.close)
+        with (
+            patch("pages.config.notify"),
+            patch("pages.config.metadata_tables_empty", return_value=True),
+            patch("pages.config.get_github_raw_file", return_value="2026-10-20"),
+            patch("pages.config.update_sleeves"),
+            patch("pages.config.update_fields"),
+            patch("pages.config.update_cards"),
+            patch("pages.config.update_characters"),
+        ):
+            page._get_data()
+            self.assertEqual(APP_CONFIG.version, "2026-10-20")
+            self.assertIsNotNone(APP_CONFIG.metadata_last_source)
+        with (
+            patch("pages.config.notify"),
+            patch("pages.config.metadata_tables_empty", return_value=False),
+        ):
+            page._refresh_metadata_state()
+            self.assertEqual(page.updateButton.text(), "Check for Updates")
+
     def test_metadata_source_persists_resets_and_validates(self):
         from pages.config import Config
 
         page = Config()
-        with patch("pages.config.show_toast"):
+        with patch("pages.config.notify"):
             page.metadataRepositoryLine.setText("Example/etl")
             page.metadataBranchLine.setText("feature/asset-names")
             page.saveMetadataSourceButton.click()
@@ -944,7 +1048,7 @@ class QualityOfLifeTests(unittest.TestCase):
         root = self._local_metadata_repo()
         page = Config()
         with (
-            patch("pages.config.show_toast"),
+            patch("pages.config.notify"),
             patch(
                 "pages.config.QFileDialog.getExistingDirectory", return_value=str(root)
             ),
@@ -994,9 +1098,9 @@ class QualityOfLifeTests(unittest.TestCase):
         (root / "data/characters.parquet").unlink()
         page = Config()
         page.metadataRepositoryLine.setText(str(root))
-        with patch("pages.config.show_toast") as toast:
+        with patch("pages.config.notify") as notified:
             self.assertFalse(page._save_metadata_source())
-            self.assertIn("characters.parquet", toast.call_args.args[2])
+            self.assertIn("characters.parquet", notified.call_args.args[3])
         self.assertEqual(
             APP_CONFIG.metadata_repository, "Nauder/floowandereeze-and-modding-etl-dl"
         )
@@ -1014,7 +1118,7 @@ class QualityOfLifeTests(unittest.TestCase):
         session.commit()
         page = Config()
         with ExitStack() as stack:
-            stack.enter_context(patch("pages.config.show_toast"))
+            stack.enter_context(patch("pages.config.notify"))
             stack.enter_context(
                 patch.object(
                     update_service.requests,
@@ -1089,6 +1193,50 @@ class QualityOfLifeTests(unittest.TestCase):
         from pages.config import Config
         from util.metadata_source import metadata_source_key
 
+        session.add(
+            CardModel(
+                name="seed",
+                large_bundle="brseed01",
+                medium_bundle="brseed02",
+                small_bundle="brseed03",
+            )
+        )
+        session.add(
+            SleeveModel(name="seed", small_bundle="brseed04", medium_bundle="brseed05")
+        )
+        session.add(
+            FieldModel(name="seed", small_bundle="brseed06", medium_bundle="brseed07")
+        )
+        session.add(CharacterModel(konami_id=999998, series="DM"))
+        session.commit()
+        self.addCleanup(
+            lambda: (
+                session.query(CardModel)
+                .filter(CardModel.small_bundle == "brseed03")
+                .delete()
+            )
+        )
+        self.addCleanup(
+            lambda: (
+                session.query(SleeveModel)
+                .filter(SleeveModel.small_bundle == "brseed04")
+                .delete()
+            )
+        )
+        self.addCleanup(
+            lambda: (
+                session.query(FieldModel)
+                .filter(FieldModel.small_bundle == "brseed06")
+                .delete()
+            )
+        )
+        self.addCleanup(
+            lambda: (
+                session.query(CharacterModel)
+                .filter(CharacterModel.konami_id == 999998)
+                .delete()
+            )
+        )
         page = Config()
         APP_CONFIG.metadata_last_source = metadata_source_key(
             APP_CONFIG.metadata_repository, ""
@@ -1096,7 +1244,7 @@ class QualityOfLifeTests(unittest.TestCase):
         APP_CONFIG.metadata_branch = "feature/asset-names"
         session.commit()
         with ExitStack() as stack:
-            stack.enter_context(patch("pages.config.show_toast"))
+            stack.enter_context(patch("pages.config.notify"))
             stack.enter_context(
                 patch("pages.config.get_github_raw_file", return_value="2026-10-19")
             )
@@ -1146,4 +1294,94 @@ class QualityOfLifeTests(unittest.TestCase):
             page._get_data()
         self.assertEqual(APP_CONFIG.version, "2026-10-19")
         self.assertTrue(page.updateButton.isEnabled())
+        page.close()
+
+    def test_metadata_tables_empty_detects_missing_rows(self):
+        from services.update_service import metadata_tables_empty
+
+        kept = {}
+        for model in (SleeveModel, FieldModel, CharacterModel, CardModel):
+            kept[model] = session.query(model).all()
+            for row in kept[model]:
+                session.expunge(row)
+            session.query(model).delete(synchronize_session=False)
+        session.commit()
+        self.assertTrue(metadata_tables_empty())
+        session.add(
+            CardModel(
+                name="seed",
+                large_bundle="seed0001",
+                medium_bundle="seed0002",
+                small_bundle="seed0003",
+            )
+        )
+        session.add(
+            SleeveModel(name="seed", small_bundle="seed0004", medium_bundle="seed0005")
+        )
+        session.add(
+            FieldModel(name="seed", small_bundle="seed0006", medium_bundle="seed0007")
+        )
+        session.add(CharacterModel(konami_id=999999, series="DM"))
+        session.commit()
+        try:
+            self.assertFalse(metadata_tables_empty())
+            session.query(CardModel).delete()
+            session.commit()
+            self.assertTrue(metadata_tables_empty())
+        finally:
+            for model in (SleeveModel, FieldModel, CharacterModel, CardModel):
+                session.query(model).delete()
+            for rows in kept.values():
+                for row in rows:
+                    session.add(row)
+            session.commit()
+
+    def test_get_data_refreshes_when_version_matches_but_tables_empty(self):
+        from contextlib import ExitStack
+
+        from pages.config import Config
+
+        APP_CONFIG.version = "2026-10-19"
+        APP_CONFIG.metadata_last_source = "[]"
+        session.commit()
+        page = Config()
+        with ExitStack() as stack:
+            stack.enter_context(patch("pages.config.notify"))
+            stack.enter_context(
+                patch("pages.config.metadata_source_key", return_value="[]")
+            )
+            stack.enter_context(
+                patch("pages.config.get_github_raw_file", return_value="2026-10-19")
+            )
+            updates = [
+                stack.enter_context(patch("pages.config." + name))
+                for name in (
+                    "update_sleeves",
+                    "update_fields",
+                    "update_cards",
+                    "update_characters",
+                )
+            ]
+            page._get_data()
+            self.assertTrue(all(update.call_count == 1 for update in updates))
+            self.assertEqual(APP_CONFIG.version, "2026-10-19")
+        page.close()
+
+    def test_set_game_path_triggers_update_when_tables_empty(self):
+        from pages.config import Config
+
+        APP_CONFIG.version = "2026-10-19"
+        session.commit()
+        install = Path("empty-meta-game")
+        (install / "dlpc_Data").mkdir(exist_ok=True, parents=True)
+        (install / "dlpc_Data/data.unity3d").touch()
+        account = install / "LocalData/12345678"
+        account.mkdir(exist_ok=True, parents=True)
+        page = Config()
+        with (
+            patch("pages.config.notify"),
+            patch.object(page, "_check_update") as check,
+        ):
+            page._set_game_path(str(account))
+            check.assert_called_once()
         page.close()

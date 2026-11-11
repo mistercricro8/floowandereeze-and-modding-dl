@@ -4,7 +4,8 @@ This module provides the main application window that hosts all the different
 pages and handles navigation between them.
 """
 
-from pyqttoast import ToastPreset
+import logging
+
 from PySide6 import QtCore, QtGui, QtWidgets
 
 from database.objects import session
@@ -15,9 +16,12 @@ from pages.config import Config
 from pages.field import Field
 from pages.sleeve import Sleeve
 from pages.ui.main_window import Ui_MainWindow
+from services.update_service import metadata_tables_empty
 from util.constants import APP_CONFIG, BG_TEMPLATE
 from util.game_discovery import normalize_game_path
-from util.ui_util import show_toast
+from util.python_utils import is_valid_game_path
+
+logger = logging.getLogger(__name__)
 
 
 class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
@@ -65,6 +69,15 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         self.config_page.dataUpdated.connect(self._reset_asset_pages)
         self._reset_asset_pages()
 
+    NAV_TOOLTIPS = {
+        "Configuration": "Configuration: Set Duel Links game folder, download card name updates, and configure backups.",
+        "Sleeves": "Sleeves: Browse, extract, and mod card sleeve artwork and custom borders.",
+        "Cards": "Cards: Browse, extract, and mod card artwork.",
+        "Fields": "Fields: Browse, extract, and mod duel playmat and field surfaces.",
+        "Characters": "Characters: Browse and edit character dialogue busts, duel cut-ins, and portraits.",
+        "Backups": "Backups: View, export, import, or manage your saved original game files.",
+    }
+
     def _reset_asset_pages(self):
         self.mainStack.setCurrentIndex(0)
         while self.mainStack.count() > 1:
@@ -72,27 +85,49 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
             self.mainStack.removeWidget(widget)
             widget.deleteLater()
         self._loaded_pages = {0}
-        path = (
-            normalize_game_path(APP_CONFIG.game_path) if APP_CONFIG.game_path else None
-        )
-        if path and APP_CONFIG.game_path != path:
-            APP_CONFIG.game_path = path
+
+        raw_path = APP_CONFIG.game_path
+        cleaned = str(raw_path).strip().strip("'\"") if raw_path else ""
+        normalized = normalize_game_path(cleaned) if cleaned else None
+        if normalized and APP_CONFIG.game_path != normalized:
+            APP_CONFIG.game_path = normalized
             session.commit()
-        valid = bool(path)
+
+        valid = False
+        if normalized:
+            valid_flag, _ = is_valid_game_path(normalized)
+            valid = bool(valid_flag)
+
+        missing_metadata = metadata_tables_empty() if valid else False
+        unlocked = valid and not missing_metadata
+
         for action in (
             self.actionsleeve_button,
             self.actioncard_button,
             self.actionfield_button,
             self.actioncharacter_button,
         ):
-            action.setEnabled(valid)
+            action.setEnabled(unlocked)
             if not valid:
                 action.setToolTip(
-                    f"{action.text()} (Disabled: Game path not configured. "
-                    "Set path in Configuration)"
+                    f"Set your game folder in Configuration to unlock {action.text()}."
+                )
+            elif missing_metadata:
+                action.setToolTip(
+                    f"Download card data in Configuration to unlock {action.text()}."
                 )
             else:
-                action.setToolTip(action.text())
+                action.setToolTip(self.NAV_TOOLTIPS.get(action.text(), action.text()))
+
+        self.actionconfig_button.setEnabled(True)
+        self.actionconfig_button.setToolTip(
+            self.NAV_TOOLTIPS.get("Configuration", "Configuration")
+        )
+        self.actionbackups_button.setEnabled(True)
+        self.actionbackups_button.setToolTip(
+            self.NAV_TOOLTIPS.get("Backups", "Backups")
+        )
+
         for _ in self._page_classes[1:]:
             self.mainStack.addWidget(QtWidgets.QWidget())
 
@@ -102,11 +137,14 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
             try:
                 page = self._page_classes[index]()
             except Exception as error:
-                show_toast(
-                    self,
-                    "Page",
-                    f"Could not load asset page: {error}",
-                    ToastPreset.WARNING_DARK,
+                logger.error(
+                    "Could not load asset page at index %d: %s",
+                    index,
+                    error,
+                    exc_info=True,
+                )
+                self.statusBar().showMessage(
+                    f"Could not load asset page: {error}", 5000
                 )
                 return
             self.mainStack.removeWidget(placeholder)
@@ -164,7 +202,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
 
         for action, label in zip(self._navigation_buttons, labels, strict=True):
             action.setText(label)
-            action.setToolTip(label)
+            action.setToolTip(self.NAV_TOOLTIPS.get(label, label))
             self._normalize_navigation_icon(action, icon_size)
             tool_button = self.toolBar.widgetForAction(action)
             if isinstance(tool_button, QtWidgets.QToolButton):

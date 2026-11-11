@@ -15,6 +15,8 @@ from services.card_service import CardService
 from services.character_service import CharacterService
 from services.field_service import FieldService
 from services.sleeve_service import SleeveService
+from unity.unity_utils import bundle_exists, card_art_bundle
+from util.enums import CardArtCoordinates
 
 
 class UnityBackupTests(unittest.TestCase):
@@ -152,6 +154,8 @@ class UnityBackupTests(unittest.TestCase):
             selected_asset_bundle=None,
             current_preview=MagicMock(),
             asset_list=MagicMock(),
+            asset_error_label=MagicMock(),
+            image_error_label=MagicMock(),
         )
         dialog._selected_bundles = lambda: [dialog.selected_asset_bundle]
         dialog._run_asset_action = lambda title, action: (
@@ -176,9 +180,8 @@ class UnityBackupTests(unittest.TestCase):
                 SimpleNamespace(create_backup=True),
             ),
             patch("dialogs.character_edit_dialog.session"),
-            patch("dialogs.character_edit_dialog.show_toast"),
             patch("dialogs.character_edit_dialog.fetch_bundle_thumb"),
-            patch("dialogs.character_edit_dialog.QMessageBox.warning") as warning,
+            patch("dialogs.character_edit_dialog.notify") as notified,
             patch(
                 "services.unity_service.unity_load", return_value=self.environment
             ) as load,
@@ -194,14 +197,14 @@ class UnityBackupTests(unittest.TestCase):
             self.assertEqual(load.call_count, 2)
             self.assertEqual(write.call_count, 4)
             self.assertTrue(dialog.character.has_backup)
-            warning.assert_not_called()
+            notified.assert_called()
 
             (self.root / "backups/characters/abcdef02.png").unlink()
             write.side_effect = None
             CharacterEditDialog._replace_asset(dialog)
             self.assertEqual(load.call_count, 3)
             self.assertTrue((self.root / "backups/characters/abcdef02.png").is_file())
-            warning.assert_not_called()
+            notified.assert_called()
 
     def test_character_replacement_respects_disabled_backups(self):
         dialog = self.character_dialog()
@@ -212,7 +215,7 @@ class UnityBackupTests(unittest.TestCase):
                 SimpleNamespace(create_backup=False),
             ),
             patch("dialogs.character_edit_dialog.session") as session,
-            patch("dialogs.character_edit_dialog.show_toast"),
+            patch("dialogs.character_edit_dialog.notify"),
             patch("dialogs.character_edit_dialog.fetch_bundle_thumb"),
             patch.object(dialog.service, "create_backup") as backup,
             patch.object(dialog.service, "replace_bundle") as write,
@@ -232,7 +235,7 @@ class UnityBackupTests(unittest.TestCase):
                 SimpleNamespace(create_backup=True),
             ),
             patch("dialogs.character_edit_dialog.session") as session,
-            patch("dialogs.character_edit_dialog.QMessageBox.warning") as warning,
+            patch("dialogs.character_edit_dialog.notify") as notified,
             patch(
                 "services.unity_service.unity_load",
                 side_effect=OSError("backup failed"),
@@ -242,7 +245,7 @@ class UnityBackupTests(unittest.TestCase):
             CharacterEditDialog._replace_asset(dialog)
             write.assert_not_called()
             session.commit.assert_not_called()
-            warning.assert_called_once()
+            notified.assert_called_once()
         self.assertFalse((self.root / "backups").exists())
 
     def test_field_replacement_backs_up_both_before_writing_and_keeps_originals(self):
@@ -260,7 +263,7 @@ class UnityBackupTests(unittest.TestCase):
         with (
             patch("pages.field.APP_CONFIG", SimpleNamespace(create_backup=True)),
             patch("pages.field.session") as session,
-            patch("pages.field.show_toast"),
+            patch("pages.field.notify"),
             patch("pages.field.fetch_field_thumb"),
             patch(
                 "services.unity_service.unity_load", return_value=self.environment
@@ -280,7 +283,7 @@ class UnityBackupTests(unittest.TestCase):
         page = self.field_page()
         with (
             patch("pages.field.APP_CONFIG", SimpleNamespace(create_backup=False)),
-            patch("pages.field.show_toast"),
+            patch("pages.field.notify"),
             patch("pages.field.fetch_field_thumb"),
             patch.object(page.service, "create_backup") as backup,
             patch.object(page.service, "replace_bundle") as write,
@@ -295,7 +298,7 @@ class UnityBackupTests(unittest.TestCase):
         with (
             patch("pages.field.APP_CONFIG", SimpleNamespace(create_backup=True)),
             patch("pages.field.session") as session,
-            patch("pages.field.show_toast"),
+            patch("pages.field.notify") as notified,
             patch("pages.field.fetch_field_thumb"),
             patch(
                 "services.unity_service.unity_load",
@@ -303,8 +306,8 @@ class UnityBackupTests(unittest.TestCase):
             ),
             patch.object(page.service, "replace_bundle") as write,
         ):
-            with self.assertRaisesRegex(OSError, "backup failed"):
-                Field._replace(page)
+            Field._replace(page)
+            notified.assert_called_once()
             write.assert_not_called()
             page.model.set_backup_state.assert_not_called()
             session.commit.assert_not_called()
@@ -318,6 +321,88 @@ class UnityBackupTests(unittest.TestCase):
                 (self.root / "backups/fields/small001.png").read_bytes(), original
             )
             self.assertEqual(write.call_count, 2)
+
+    def test_bundle_exists_checks_disk_without_loading(self):
+        target = self.root / "ab" / "abcdef01"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        with patch("unity.unity_utils.prepare_environment", return_value=str(target)):
+            self.assertFalse(bundle_exists("abcdef01"))
+            target.touch()
+            self.assertTrue(bundle_exists("abcdef01"))
+
+    def test_card_art_bundle_prefers_large_when_present(self):
+        card = SimpleNamespace(
+            large_bundle="large001", medium_bundle="medium01", unity_file=False
+        )
+        with patch("unity.unity_utils.bundle_exists", return_value=True):
+            bundle, coords = card_art_bundle(card)
+            self.assertEqual(bundle, "large001")
+            self.assertIs(coords, CardArtCoordinates.LARGE)
+
+    def test_card_art_bundle_falls_back_to_medium_when_hq_missing(self):
+        card = SimpleNamespace(
+            large_bundle="large001", medium_bundle="medium01", unity_file=False
+        )
+        with patch("unity.unity_utils.bundle_exists", return_value=False):
+            bundle, coords = card_art_bundle(card)
+            self.assertEqual(bundle, "medium01")
+            self.assertIs(coords, CardArtCoordinates.MEDIUM)
+
+    def test_card_replace_skips_missing_hq_bundle(self):
+        replacement = self.root / "replacement.png"
+        self.image.save(replacement)
+        service = CardService()
+        service.bundle = "medium01"
+        service.image_path = str(replacement)
+        card = SimpleNamespace(
+            small_bundle="small001",
+            medium_bundle="medium01",
+            large_bundle="large001",
+            unity_file=False,
+        )
+        written = []
+
+        def fake_load(path):
+            written.append(Path(path).name)
+            data = MagicMock()
+            data.image = self.image.copy()
+            texture = SimpleNamespace(
+                type=SimpleNamespace(name="Texture2D"),
+                read=lambda: data,
+            )
+            env = MagicMock()
+            env.objects = [texture]
+            env.file.save.return_value = b"bundle"
+            return env
+
+        real_open = open
+
+        def fake_open(path, mode="r", *args, **kwargs):
+            if "w" in mode and isinstance(path, str):
+                Path(path).parent.mkdir(parents=True, exist_ok=True)
+            return real_open(path, mode, *args, **kwargs)
+
+        query = MagicMock()
+        query.filter.return_value.first.side_effect = [None, card]
+        with (
+            patch("services.card_service.session") as session,
+            patch(
+                "services.card_service.bundle_exists",
+                side_effect=lambda bundle, miss=False: bundle != "large001",
+            ),
+            patch(
+                "services.card_service.prepare_environment",
+                side_effect=lambda miss, bundle: str(self.root / bundle),
+            ),
+            patch("services.card_service.unity_load", side_effect=fake_load),
+            patch("services.card_service.APP_CONFIG") as config,
+            patch("builtins.open", side_effect=fake_open),
+        ):
+            session.query.return_value = query
+            config.mipmap_count = 1
+            config.packer = "none"
+            service.replace_bundle()
+        self.assertEqual(sorted(written), ["medium01", "small001"])
 
 
 if __name__ == "__main__":
