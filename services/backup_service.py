@@ -177,7 +177,7 @@ def sync_backup_flags(service: "BackupService") -> None:
     from util.image_utils import slugify
 
     mappings = (
-        (models.CardModel, "cards", ("large_bundle",)),
+        (models.CardModel, "cards", ("large_bundle", "medium_bundle", "small_bundle")),
         (models.SleeveModel, "sleeves", ("medium_bundle",)),
         (models.FieldModel, "fields", ("medium_bundle",)),
         (

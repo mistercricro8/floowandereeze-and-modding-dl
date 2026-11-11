@@ -6,7 +6,7 @@ from UnityPy.enums import TextureFormat
 from database.models import CardModel
 from database.objects import session
 from services.unity_service import UnityService
-from unity.unity_utils import prepare_environment
+from unity.unity_utils import bundle_exists, prepare_environment
 from util.constants import APP_CONFIG
 from util.enums import CardArtCoordinates
 from util.image_utils import convert_image, crop_to_rect
@@ -19,7 +19,6 @@ class CardService(UnityService):
 
     @override
     def replace_bundle(self) -> None:
-
         if not self.bundle or not self.image_path:
             return
 
@@ -28,9 +27,16 @@ class CardService(UnityService):
             .filter(CardModel.large_bundle == self.bundle)
             .first()
         )
+        if card is None:
+            card = (
+                session.query(CardModel)
+                .filter(CardModel.medium_bundle == self.bundle)
+                .first()
+            )
+        if card is None:
+            raise ValueError(f"No card found for bundle {self.bundle!r}")
 
-        if card:
-            self.unity_file = card.unity_file
+        self.unity_file = card.unity_file
 
         for bundle, size in zip(
             [card.small_bundle, card.medium_bundle, card.large_bundle],
@@ -41,6 +47,8 @@ class CardService(UnityService):
             ],
             strict=True,
         ):
+            if not bundle or not bundle_exists(bundle, self.unity_file):
+                continue
             f_path = prepare_environment(self.unity_file, bundle)
             env = unity_load(f_path)
 

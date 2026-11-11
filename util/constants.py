@@ -29,8 +29,8 @@ BG_TEMPLATE: str = """
     .QPushButton {
         border: 1px solid #121212;
         border-radius: 5px;
-        padding: 3px;
-        width: 90%;
+        padding: 4px 10px;
+        min-height: 24px;
     }
 
     .QToolBar::item:hover {
@@ -43,6 +43,19 @@ BG_TEMPLATE: str = """
 
     .QPushButton:disabled {
         border: 1px solid #523000;
+    }
+
+    #toast-icon-widget, #toast-close-button {
+        background: transparent;
+        border: none;
+        padding: 0px;
+        min-height: 0px;
+        min-width: 0px;
+    }
+
+    #toast-icon-widget:hover, #toast-close-button:hover {
+        background: transparent;
+        border: none;
     }
 """
 """
@@ -71,6 +84,6 @@ APP_CONFIG: AppConfig = session.query(AppConfig).first()
 """
 
 if not APP_CONFIG:
-    new_app = AppConfig(game_path="")
+    new_app = AppConfig(game_path="", create_backup=True)
     session.add(new_app)
     APP_CONFIG = new_app

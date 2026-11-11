@@ -1,4 +1,4 @@
-from os.path import join
+from os.path import isfile, join
 
 from PIL import Image
 from PIL.ImageQt import ImageQt
@@ -30,6 +30,28 @@ def prepare_environment(miss: bool, bundle: str) -> str:
             / bundle
         )
     return join(APP_CONFIG.game_path, bundle[:2], bundle)
+
+
+def bundle_exists(bundle: str | Mapped[str], unity_file: bool = False) -> bool:
+    """Check whether a bundle file exists without loading it."""
+    try:
+        return isfile(prepare_environment(unity_file, bundle))
+    except (FileNotFoundError, OSError, TypeError):
+        return False
+
+
+def card_art_bundle(card) -> tuple[str, object]:
+    """Return the best available card art bundle and its crop coordinates.
+
+    Large bundles are the optional high-quality pack; fall back to the always
+    present medium bundle when the game was installed without HQ art.
+    """
+    from util.enums import CardArtCoordinates
+
+    large = getattr(card, "large_bundle", None)
+    if large and bundle_exists(large, getattr(card, "unity_file", False)):
+        return large, CardArtCoordinates.LARGE
+    return card.medium_bundle, CardArtCoordinates.MEDIUM
 
 
 def fetch_bundle_thumb(

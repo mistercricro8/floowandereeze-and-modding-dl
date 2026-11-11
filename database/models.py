@@ -52,7 +52,7 @@ class AppConfig(base):
     version: Mapped[str] = mapped_column(String(100), nullable=True)
     crypto_key: Mapped[str] = mapped_column(String(100), nullable=True)
     packer: Mapped[str] = mapped_column(String(5), default="LZ4")
-    create_backup: Mapped[bool] = mapped_column(Boolean, default=False)
+    create_backup: Mapped[bool] = mapped_column(Boolean, default=True)
     background_mode: Mapped[str] = mapped_column(String(10), default="stretched")
     metadata_repository: Mapped[str] = mapped_column(
         Text, default="Nauder/floowandereeze-and-modding-etl-dl"

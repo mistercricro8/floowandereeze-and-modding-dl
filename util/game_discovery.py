@@ -24,19 +24,16 @@ def resolve_game_root(account_or_game_path: str | Path | None) -> Path | None:
     except (OSError, RuntimeError):
         resolved = p
 
-    # 1. Candidate is player folder: .../LocalData/<account>
     if resolved.parent.name.lower() == "localdata":
         candidate = resolved.parent.parent
         if (candidate / "dlpc_Data" / "data.unity3d").is_file():
             return candidate
 
-    # 2. Candidate is LocalData: .../LocalData
     if resolved.name.lower() == "localdata":
         candidate = resolved.parent
         if (candidate / "dlpc_Data" / "data.unity3d").is_file():
             return candidate
 
-    # 3. Candidate is the game root directly: .../Yu-Gi-Oh! Duel Links
     if (resolved / "dlpc_Data" / "data.unity3d").is_file():
         return resolved
 
@@ -138,7 +135,6 @@ def _get_steam_library_paths() -> list[str]:
                 )
             )
             for library_path in library_matches:
-                # Handle Windows escaped backslashes without corrupting POSIX paths
                 normalized_path = library_path.replace("\\\\", "\\")
                 cand_str = str(Path(normalized_path))
                 cand_key = _path_key(cand_str)
@@ -175,10 +171,9 @@ def _get_steam_install_paths() -> list[str]:
             if candidate.is_dir():
                 steam_paths.append(str(candidate))
 
-    # Linux Standard (Native), Flatpak, Snap, and environment paths
     home = Path.home()
     linux_candidates = [
-        # Native / standard Steam
+        # Native
         home / ".local/share/Steam",
         home / ".steam/steam",
         home / ".steam/root",
@@ -200,7 +195,6 @@ def _get_steam_install_paths() -> list[str]:
     if xdg_data:
         linux_candidates.append(Path(xdg_data).expanduser() / "Steam")
 
-    # Wine / Proton Z: drive path mapping if running inside Wine
     if Path("Z:/").is_dir():
         for subpath in (
             ".local/share/Steam",

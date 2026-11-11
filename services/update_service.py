@@ -196,6 +196,15 @@ def get_github_parquet_file(
         raise ValueError(f"Failed to read parquet file: {str(e)}") from e
 
 
+def metadata_tables_empty() -> bool:
+    """Report whether any metadata table still needs its first download."""
+    with DBsession() as local_session:
+        return any(
+            local_session.query(model).first() is None
+            for model in (SleeveModel, CardModel, FieldModel, CharacterModel)
+        )
+
+
 def asset_label(row: dict[str, Any]) -> str | None:
     """Accept both new named metadata and older Parquet exports."""
     value = row.get("name")
