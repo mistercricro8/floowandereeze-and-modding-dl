@@ -15,7 +15,7 @@ from services.card_service import CardService
 from services.character_service import CharacterService
 from services.field_service import FieldService
 from services.sleeve_service import SleeveService
-from unity.unity_utils import bundle_exists, card_art_bundle
+from unity.unity_utils import bundle_exists, card_art_bundle, get_configured_packer
 from util.enums import CardArtCoordinates
 
 
@@ -403,6 +403,36 @@ class UnityBackupTests(unittest.TestCase):
             config.packer = "none"
             service.replace_bundle()
         self.assertEqual(sorted(written), ["medium01", "small001"])
+
+    def test_get_configured_packer_normalizes_to_lowercase(self):
+        self.assertEqual(get_configured_packer(SimpleNamespace(packer="LZ4")), "lz4")
+        self.assertEqual(get_configured_packer(SimpleNamespace(packer="Lz4Hc")), "lz4hc")
+        self.assertEqual(get_configured_packer(SimpleNamespace(packer="LZMA")), "lzma")
+        self.assertEqual(get_configured_packer(SimpleNamespace(packer="NONE")), "none")
+        self.assertEqual(get_configured_packer(SimpleNamespace(packer=None)), "lz4")
+        self.assertEqual(get_configured_packer(None), "lz4")
+
+    def test_migrations_normalize_uppercase_packer(self):
+        import sqlite3
+        from database.migrations import run_migrations
+
+        db_file = self.root / "test_migration.db"
+        conn = sqlite3.connect(str(db_file))
+        c = conn.cursor()
+        c.execute("CREATE TABLE app_config (id INTEGER PRIMARY KEY, packer VARCHAR(5))")
+        c.execute("INSERT INTO app_config (id, packer) VALUES (1, 'LZ4')")
+        conn.commit()
+        conn.close()
+
+        run_migrations(str(db_file))
+
+        conn = sqlite3.connect(str(db_file))
+        c = conn.cursor()
+        c.execute("SELECT packer FROM app_config WHERE id = 1")
+        row = c.fetchone()
+        conn.close()
+        self.assertIsNotNone(row)
+        self.assertEqual(row[0], "lz4")
 
 
 if __name__ == "__main__":

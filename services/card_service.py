@@ -6,7 +6,7 @@ from UnityPy.enums import TextureFormat
 from database.models import CardModel
 from database.objects import session
 from services.unity_service import UnityService
-from unity.unity_utils import bundle_exists, prepare_environment
+from unity.unity_utils import bundle_exists, get_configured_packer, prepare_environment
 from util.constants import APP_CONFIG
 from util.enums import CardArtCoordinates
 from util.image_utils import convert_image, crop_to_rect
@@ -77,7 +77,7 @@ class CardService(UnityService):
                     break
 
             with open(f_path, "wb") as f:
-                f.write(env.file.save(packer=APP_CONFIG.packer))
+                f.write(env.file.save(packer=get_configured_packer(APP_CONFIG)))
 
     def get_names(self) -> list[str]:
         return [card.name for card in session.query(CardModel).all()]

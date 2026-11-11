@@ -277,6 +277,8 @@ class Field(QtWidgets.QWidget, Ui_Field):
         else:
             self.service.crop_rect = None
             self._mode_stack.setCurrentIndex(0)
+        if hasattr(self, "responsive_editor"):
+            self.responsive_editor.resize_images()
 
     def _on_crop_changed(self) -> None:
         if self._crop_mode:
@@ -308,6 +310,8 @@ class Field(QtWidgets.QWidget, Ui_Field):
                 self.service.crop_rect = None
                 self._mode_stack.setCurrentIndex(0)
             self._update_action_states()
+            if hasattr(self, "responsive_editor"):
+                self.responsive_editor.resize_images()
             notify(
                 self,
                 "info",

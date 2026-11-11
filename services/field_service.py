@@ -4,7 +4,7 @@ from UnityPy import load as unity_load
 from UnityPy.enums import TextureFormat
 
 from services.unity_service import UnityService
-from unity.unity_utils import prepare_environment
+from unity.unity_utils import get_configured_packer, prepare_environment
 from util.constants import APP_CONFIG
 from util.image_utils import convert_image, crop_to_rect
 
@@ -42,4 +42,4 @@ class FieldService(UnityService):
                 break
 
         with open(f_path, "wb") as f:
-            f.write(env.file.save(packer=APP_CONFIG.packer))
+            f.write(env.file.save(packer=get_configured_packer(APP_CONFIG)))

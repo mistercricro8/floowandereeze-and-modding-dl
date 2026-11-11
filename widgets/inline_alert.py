@@ -54,7 +54,7 @@ class InlineAlert(QtWidgets.QFrame):
         self.setMinimumWidth(0)
         self.setSizePolicy(
             QtWidgets.QSizePolicy.Policy.Preferred,
-            QtWidgets.QSizePolicy.Policy.Minimum,
+            QtWidgets.QSizePolicy.Policy.Fixed,
         )
 
         layout = QtWidgets.QVBoxLayout(self)
@@ -149,10 +149,39 @@ class InlineAlert(QtWidgets.QFrame):
             f" border: none;"
             f"}}"
         )
+        self.updateGeometry()
         self.setVisible(True)
 
         if kind_key in AUTO_HIDE_KINDS:
             self._timer.start(AUTO_HIDE_DURATION_MS)
+
+    def minimumSizeHint(self) -> QtCore.QSize:
+        if not self.isVisible():
+            return QtCore.QSize(0, 0)
+        return QtCore.QSize(0, 36)
+
+    def sizeHint(self) -> QtCore.QSize:
+        if not self.isVisible():
+            return QtCore.QSize(0, 0)
+        parent = self.parentWidget()
+        parent_w = parent.width() if parent else self.width()
+        avail_w = max(200, parent_w - 24)
+        total_h = 16
+        if self._title_label.isVisible() and self._title_label.text():
+            tr = self._title_label.fontMetrics().boundingRect(
+                QtCore.QRect(0, 0, avail_w, 10000),
+                QtCore.Qt.TextFlag.TextWordWrap,
+                self._title_label.text(),
+            )
+            total_h += tr.height() + 4
+        if self._text_label.isVisible() and self._text_label.text():
+            tr = self._text_label.fontMetrics().boundingRect(
+                QtCore.QRect(0, 0, avail_w, 10000),
+                QtCore.Qt.TextFlag.TextWordWrap,
+                self._text_label.text(),
+            )
+            total_h += tr.height()
+        return QtCore.QSize(avail_w, total_h)
 
     def clear(self) -> None:
         """Clear all message labels and hide the inline alert banner."""
@@ -162,6 +191,7 @@ class InlineAlert(QtWidgets.QFrame):
         self._text_label.setText("")
         self._text_label.setVisible(False)
         self.setVisible(False)
+        self.updateGeometry()
 
 
 def attach_inline_alert(

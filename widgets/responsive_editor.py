@@ -54,19 +54,24 @@ class ResponsiveEditor(QtCore.QObject):
                 QtWidgets.QBoxLayout.Direction.RightToLeft
             )
         page.bundle.hide()
+        self.preview_layout = None
         for widget, text in ((page.current, "Current"), (page._mode_stack, "Preview")):
             for parent_layout in editor.findChildren(QtWidgets.QBoxLayout):
                 index = parent_layout.indexOf(widget)
                 if index >= 0:
+                    self.preview_layout = parent_layout
                     parent_layout.takeAt(index)
                     column = QtWidgets.QVBoxLayout()
+                    column.setSpacing(4)
+                    column.setAlignment(QtCore.Qt.AlignmentFlag.AlignHCenter)
                     label = QtWidgets.QLabel(text, editor)
                     label.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
                     label.setStyleSheet("font-weight: 600;")
                     column.addWidget(label)
-                    column.addWidget(widget, 1, QtCore.Qt.AlignmentFlag.AlignCenter)
+                    column.addWidget(widget, 0, QtCore.Qt.AlignmentFlag.AlignHCenter)
                     parent_layout.insertLayout(index, column)
                     break
+        layout.addStretch(1)
         self.scroll = QtWidgets.QScrollArea(page)
         self.scroll.setWidgetResizable(True)
         self.scroll.setFrameShape(QtWidgets.QFrame.Shape.NoFrame)
@@ -165,8 +170,24 @@ class ResponsiveEditor(QtCore.QObject):
         return super().eventFilter(watched, event)
 
     def resize_images(self):
-        height = max(100, min(650, self.scroll.viewport().height() - 155))
-        width = max(100, (self.scroll.viewport().width() - 160) // 2)
+        editor = self.scroll.widget()
+        reserved = 0
+        if editor and editor.layout():
+            layout = editor.layout()
+            for i in range(layout.count()):
+                item = layout.itemAt(i)
+                if item.layout() is not None and item.layout() == self.preview_layout:
+                    continue
+                w = item.widget()
+                if w and w.isVisible():
+                    reserved += w.sizeHint().height() + layout.spacing()
+                elif item.layout():
+                    reserved += item.layout().sizeHint().height() + layout.spacing()
+        reserved = max(160, reserved + 32)
+        viewport_h = self.scroll.viewport().height()
+        viewport_w = self.scroll.viewport().width()
+        height = max(100, min(650, viewport_h - reserved))
+        width = max(100, (viewport_w - 160) // 2)
         height = min(height, int(width / self.ratio))
         for widget in (self.page.current, self.page._mode_stack):
             widget.setFixedSize(max(64, int(height * self.ratio)), max(64, height))

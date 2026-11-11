@@ -55,6 +55,9 @@ def run_migrations(db_path: str = "database.db") -> None:
         ):
             if name not in columns:
                 cursor.execute(f"ALTER TABLE app_config ADD COLUMN {name} {definition}")
+        cursor.execute(
+            "UPDATE app_config SET packer = lower(packer) WHERE packer IS NOT NULL"
+        )
         conn.commit()
         conn.close()
     except Exception as e:

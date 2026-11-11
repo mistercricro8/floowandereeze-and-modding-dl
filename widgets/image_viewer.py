@@ -44,8 +44,21 @@ class ImageViewer(QWidget):
             )
         self.update()
 
-    def sizeHint(self):
-        return self._sizeHint
+    MAX_HINT_SIZE: int = 374
+
+    def sizeHint(self) -> QSize:
+        if self._sizeHint.isValid() and not self._sizeHint.isEmpty():
+            pw, ph = self._sizeHint.width(), self._sizeHint.height()
+            if pw <= 0 or ph <= 0:
+                return QSize(self.MAX_HINT_SIZE, self.MAX_HINT_SIZE)
+            scale = min(self.MAX_HINT_SIZE / pw, self.MAX_HINT_SIZE / ph)
+            if scale < 1.0:
+                return QSize(max(1, int(pw * scale)), max(1, int(ph * scale)))
+            return self._sizeHint
+        return QSize(self.MAX_HINT_SIZE, self.MAX_HINT_SIZE)
+
+    def minimumSizeHint(self) -> QSize:
+        return QSize(64, 64)
 
     def resizeEvent(self, event):
         self.updateScaled()

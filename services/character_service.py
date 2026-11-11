@@ -10,7 +10,7 @@ from UnityPy.enums import TextureFormat
 from database.models import CharacterAssetLayout, CharacterModel
 from database.objects import DBsession, session
 from services.unity_service import UnityService
-from unity.unity_utils import prepare_environment
+from unity.unity_utils import get_configured_packer, prepare_environment
 from util.constants import APP_CONFIG
 from util.image_utils import content_bounds, convert_image, crop_to_rect, slugify
 
@@ -190,7 +190,7 @@ class CharacterService(UnityService):
                         continue
 
         with open(f_path, "wb") as f:
-            f.write(env.file.save(packer=APP_CONFIG.packer))
+            f.write(env.file.save(packer=get_configured_packer(APP_CONFIG)))
 
     def get_series_list(self) -> list[str]:
         """Get unique list of character series for filtering."""

@@ -145,3 +145,16 @@ def fetch_field_thumb(field: FieldModel) -> QtGui.QIcon | None:
                 icon.addPixmap(QtGui.QPixmap(ImageQt(img)))
 
                 return icon
+
+
+def get_configured_packer(config=None) -> str:
+    """Return the normalized lowercase UnityFS packer name from configuration."""
+    target = config if config is not None else APP_CONFIG
+    try:
+        raw = getattr(target, "packer", None)
+        if raw:
+            return str(raw).strip().lower()
+    except Exception:
+        pass
+    return "lz4"
+

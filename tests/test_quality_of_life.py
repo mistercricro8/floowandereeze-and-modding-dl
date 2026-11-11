@@ -819,6 +819,38 @@ class QualityOfLifeTests(unittest.TestCase):
             page.deleteLater()
         image.unlink()
 
+    def test_image_viewer_size_hint_bounded_and_editor_layout_compact(self):
+        from pages.card import Card
+        from widgets.inline_alert import notify
+
+        image = Path("hires.png")
+        pixmap = QtGui.QPixmap(2048, 2048)
+        pixmap.fill(QtCore.Qt.GlobalColor.cyan)
+        pixmap.save(str(image))
+
+        page = Card()
+        page.resize(1200, 800)
+        page.show()
+        _APP.processEvents()
+
+        page._load_image(str(image.resolve()))
+        _APP.processEvents()
+
+        self.assertLessEqual(page.preview.sizeHint().width(), 374)
+        self.assertLessEqual(page.preview.sizeHint().height(), 374)
+
+        notify(page, "error", "Test Error", "Line 1\nLine 2\nLine 3 message.")
+        _APP.processEvents()
+
+        self.assertLessEqual(page.inlineAlert.minimumSizeHint().height(), 60)
+
+        editor = page.responsive_editor.scroll.widget()
+        self.assertLess(editor.sizeHint().height(), 1000)
+
+        page.close()
+        page.deleteLater()
+        image.unlink()
+
     def test_backups_available_without_game_and_after_page_reset(self):
         from pages.backups import Backups
 

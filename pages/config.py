@@ -224,8 +224,8 @@ class Config(QWidget, Ui_Config):
 
     def _set_packer(self, radio):
         if radio.isChecked():
-            packer = radio.objectName().replace("Button", "")
-            if packer != APP_CONFIG.packer:
+            packer = radio.objectName().replace("Button", "").lower()
+            if packer != (APP_CONFIG.packer or "").lower():
                 APP_CONFIG.packer = packer
                 session.commit()
                 logger.info("File compression set to %s", packer.upper())
@@ -562,6 +562,7 @@ class Config(QWidget, Ui_Config):
                 self.gamePathErrorLabel.setVisible(True)
             self._update_game_dependent_controls(False)
 
+        current_packer = (APP_CONFIG.packer or "lz4").lower()
         for radio in [
             self.noneButton,
             self.lzmaButton,
@@ -569,7 +570,7 @@ class Config(QWidget, Ui_Config):
             self.lz4hcButton,
             self.lzhamButton,
         ]:
-            if radio.objectName().startswith(APP_CONFIG.packer or "lz4"):
+            if radio.objectName().lower().startswith(current_packer):
                 radio.setChecked(True)
                 break
 
