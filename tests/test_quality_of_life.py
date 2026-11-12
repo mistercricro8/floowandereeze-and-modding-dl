@@ -1459,3 +1459,77 @@ class QualityOfLifeTests(unittest.TestCase):
             card_page.inlineAlert.parent(), card_page.responsive_editor.scroll.widget()
         )
         card_page.close()
+
+    def test_show_toast_routes_to_inline_alert(self):
+        from types import SimpleNamespace
+
+        from pages.card import Card
+        from util.ui_util import show_toast
+
+        card_page = Card()
+        self.addCleanup(card_page.close)
+
+        with patch("widgets.inline_alert.notify") as mock_notify:
+            show_toast(
+                card_page,
+                "Done",
+                "All set",
+                preset=SimpleNamespace(name="SUCCESS_DARK"),
+            )
+            mock_notify.assert_called_once_with(card_page, "success", "Done", "All set")
+
+    def test_show_actionable_error_dialog_routes_to_inline_alert(self):
+        from pages.card import Card
+        from util.ui_util import show_actionable_error_dialog
+
+        card_page = Card()
+        self.addCleanup(card_page.close)
+
+        with patch("widgets.inline_alert.notify") as mock_notify:
+            show_actionable_error_dialog(
+                card_page,
+                "Save Error",
+                "Cannot write file",
+                "Check disk permissions",
+                technical_details="Errno 13",
+            )
+            mock_notify.assert_called_once_with(
+                card_page,
+                "error",
+                "Save Error",
+                "Cannot write file\nCheck disk permissions\nErrno 13",
+            )
+
+    def test_show_info_dialog_routes_to_inline_alert(self):
+        from dialogs.simple_dialogs import show_info_dialog
+        from pages.card import Card
+
+        card_page = Card()
+        self.addCleanup(card_page.close)
+
+        with patch("widgets.inline_alert.notify") as mock_notify:
+            show_info_dialog("Info Title", "Operation finished", parent=card_page)
+            mock_notify.assert_called_once_with(
+                card_page, "info", "Info Title", "Operation finished"
+            )
+
+    def test_config_update_progress_inline(self):
+        from pages.config import Config
+
+        page = Config()
+        self.addCleanup(page.close)
+
+        with (
+            patch("pages.config.notify") as mock_notify,
+            patch("pages.config.metadata_tables_empty", return_value=True),
+            patch("pages.config.get_github_raw_file", return_value="2026-10-25"),
+            patch("pages.config.update_sleeves"),
+            patch("pages.config.update_fields"),
+            patch("pages.config.update_cards"),
+            patch("pages.config.update_characters"),
+        ):
+            page._get_data()
+            self.assertTrue(page.updateButton.isEnabled())
+            kinds = [args[1] for args, _ in mock_notify.call_args_list]
+            self.assertIn("info", kinds)
+            self.assertIn("success", kinds)

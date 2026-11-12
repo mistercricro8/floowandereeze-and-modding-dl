@@ -10,7 +10,6 @@ from PySide6.QtWidgets import (
     QFileDialog,
     QLabel,
     QMessageBox,
-    QProgressDialog,
     QVBoxLayout,
     QWidget,
 )
@@ -692,13 +691,9 @@ class Config(QWidget, Ui_Config):
             or datetime.strptime(local.strip(), "%Y-%m-%d").date()
             < datetime.strptime(remote.strip(), "%Y-%m-%d").date()
         ):
-            progress = QProgressDialog("Updating data...", "Cancel", 0, 4, self)
-            progress.setWindowModality(Qt.WindowModality.WindowModal)
-            progress.setWindowTitle("Updating")
-            progress.setCancelButton(None)
-            progress.show()
-
             self.updateButton.setEnabled(False)
+            self.updateButton.setText("Updating... (0/4)")
+            notify(self, "info", "Update", "Downloading metadata updates...")
             try:
                 with ThreadPoolExecutor(max_workers=4) as executor:
                     futures = [
@@ -717,11 +712,14 @@ class Config(QWidget, Ui_Config):
                         )
                         for future in done:
                             future.result()
-                        progress.setValue(len(futures) - len(pending))
+                        completed = len(futures) - len(pending)
+                        self.updateButton.setText(
+                            f"Updating... ({completed}/{len(futures)})"
+                        )
                         QApplication.processEvents()
             finally:
-                progress.close()
                 self.updateButton.setEnabled(True)
+                self._refresh_metadata_state()
             session.expire_all()
 
             APP_CONFIG.version = remote

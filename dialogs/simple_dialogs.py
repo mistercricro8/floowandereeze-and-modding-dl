@@ -48,20 +48,16 @@ def show_confirmation_dialog(message: str, warning=False) -> bool:
 
 def show_info_dialog(title: str, message: str, parent=None) -> None:
     """
-    Display a modal informational dialog.
-
-    .. deprecated::
-        Deprecated: use `widgets.inline_alert.notify` instead to provide inline
-        feedback without interrupting the user or opening modal dialog windows.
+    Display informational feedback using the standardized inline alert banner.
 
     Args:
-        title: Window title for the dialog.
+        title: Title of the informational alert.
         message: Informational text body.
-        parent: Optional parent widget.
+        parent: Optional parent widget hosting an inline alert banner.
     """
-    message_box = QMessageBox(parent)
-    message_box.setIcon(QMessageBox.Icon.Information)
-    message_box.setWindowTitle(title)
-    message_box.setText(message)
-    message_box.setStandardButtons(QMessageBox.StandardButton.Ok)
-    message_box.exec()
+    from widgets.inline_alert import notify
+
+    if parent is not None:
+        notify(parent, "info", title, message)
+    else:
+        logger.info("%s: %s", title, message)

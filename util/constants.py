@@ -55,19 +55,6 @@ BG_TEMPLATE: str = """
         border: 1px solid rgba(255, 255, 255, 0.1);
         color: rgba(255, 255, 255, 0.35);
     }
-
-    #toast-icon-widget, #toast-close-button {
-        background: transparent;
-        border: none;
-        padding: 0px;
-        min-height: 0px;
-        min-width: 0px;
-    }
-
-    #toast-icon-widget:hover, #toast-close-button:hover {
-        background: transparent;
-        border: none;
-    }
 """
 """
     CSS template to apply on background changes, the $VALUE$ placeholders
