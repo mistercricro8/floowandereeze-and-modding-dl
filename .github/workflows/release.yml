@@ -66,15 +66,21 @@ jobs:
           path: release-artifacts
 
       - name: Create Release Draft
-        id: create_release
-        uses: softprops/action-gh-release@v2
-        with:
-          files: |
-            release-artifacts/release-windows/*
-            release-artifacts/release-linux/*
-          generate_release_notes: true
-          draft: true
-          prerelease: ${{ contains(github.ref, 'beta') }}
-          tag_name: ${{ github.ref_name }}
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ github.ref_name }}
+          IS_BETA: ${{ contains(github.ref, 'beta') }}
+        run: |
+          shopt -s nullglob
+          FILES=(release-artifacts/release-windows/* release-artifacts/release-linux/*)
+          if [ ${#FILES[@]} -eq 0 ]; then
+            echo "Error: No release artifacts found" >&2
+            exit 1
+          fi
+
+          FLAGS=(--generate-notes --draft)
+          if [ "$IS_BETA" = "true" ]; then
+            FLAGS+=(--prerelease)
+          fi
+
+          gh release create "$TAG_NAME" "${FILES[@]}" "${FLAGS[@]}"
