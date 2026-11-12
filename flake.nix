@@ -22,6 +22,7 @@
         qtLibs = with pkgs; [
           libGL
           libglvnd
+          wayland
           libxkbcommon
           libX11
           libXext
@@ -54,20 +55,42 @@
           name = "floowandereeze-env";
           paths = [ pkgs.uv ] ++ qtLibs;
         };
+        fhs = pkgs.buildFHSEnv {
+          name = "floowandereeze-fhs";
+          targetPkgs = pkgs: qtLibs ++ (with pkgs; [
+            alsa-lib
+            pulseaudio
+          ]);
+          runScript = pkgs.writeScript "fhs-entry.sh" ''
+            if [ $# -eq 0 ]; then
+              exec bash
+            else
+              exec "$@"
+            fi
+          '';
+        };
       in
       {
+        packages.fhs = fhs;
+
         devShells.default = pkgs.mkShell {
           packages = [ pkgs.uv pkgs.python312 ];
           buildInputs = qtLibs;
           LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath qtLibs;
           shellHook = ''
             export UV_PYTHON_PREFERENCE=only-managed
+            unset _PYTHON_SYSCONFIGDATA_NAME
           '';
         };
 
         apps.default = {
           type = "app";
           program = "${uvEnv}/bin/uv";
+        };
+
+        apps.fhs = {
+          type = "app";
+          program = "${fhs}/bin/floowandereeze-fhs";
         };
       }
     );

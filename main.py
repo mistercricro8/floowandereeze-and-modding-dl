@@ -4,7 +4,11 @@ This module initializes the Qt application, sets up the UI theme,
 and handles the main application window and splash screen.
 """
 
+import os
 import sys
+
+if getattr(sys, "frozen", False):
+    os.environ.pop("_PYTHON_SYSCONFIGDATA_NAME", None)
 
 from PySide6 import QtWidgets
 from PySide6.QtGui import QFont, QPixmap

@@ -19,6 +19,7 @@ except ImportError:
     from scripts.common import ROOT, run
 
 APP_NAME = "Floowandereeze & Modding - Duel Links"
+RTHOOK_ENV = ROOT / "scripts" / "rthooks" / "pyinstaller_rth_env.py"
 
 
 def unity_package_dir() -> Path:
@@ -46,6 +47,12 @@ def main() -> None:
         f"{unity_package_dir()}{os.pathsep}UnityPy/",
         "--add-data",
         f"{ROOT / 'pages' / 'ui'}{os.pathsep}pages/ui/",
+        "--runtime-hook",
+        str(RTHOOK_ENV),
+        "--collect-all",
+        "fmod_toolkit",
+        "--collect-all",
+        "archspec",
         "--hidden-import",
         "pyarrow",
         "--name",
