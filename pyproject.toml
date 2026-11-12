@@ -1,6 +1,6 @@
 [project]
 name = "floowandereeze-and-modding-dl"
-version = "1.1.0"
+version = "0.1.2"
 description = "A modding tool for Yu-Gi-Oh! Duel Links, built with PySide6 (Qt6)."
 readme = "README.md"
 requires-python = ">=3.12,<3.14"
@@ -10,7 +10,7 @@ authors = [
 ]
 urls = { Repository = "https://github.com/Nauder/floowandereeze-and-modding-dl" }
 dependencies = [
-    "PySide6>=6.7.2",
+    "PySide6>=6.7.2,<6.12.0",
     "SQLAlchemy>=2.0.34",
     "UnityPy>=1.10.18",
     "Pillow>=10.4.0",
