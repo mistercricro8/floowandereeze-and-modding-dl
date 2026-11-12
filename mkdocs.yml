@@ -1,5 +1,6 @@
 site_name: Floowandereeze & Modding - Duel Links
-repo_url: https://github.com/nauder/floowandereeze-and-modding-dl
+site_url: https://mistercricro8.github.io/floowandereeze-and-modding-dl/
+repo_url: https://github.com/mistercricro8/floowandereeze-and-modding-dl
 theme:
   name: material
   favicon: assets/icon.png
@@ -40,6 +41,8 @@ nav:
     - Card Sleeve Editor: features/sleeve.md
     - Playmat Editor: features/field.md
     - Character Editor: features/character.md
+  - Development:
+    - Screenshots: development/screenshots.md
   
 extra:
   social:

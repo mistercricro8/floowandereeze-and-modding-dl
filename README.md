@@ -6,8 +6,8 @@ A modding tool for Yu-Gi-Oh! Duel Links, built with PySide6 (Qt6) for Windows an
 
 ⚠️ **This project is currently in active development. Features may change or break at any time.** ⚠️
 
-[![CI](https://github.com/Nauder/floowandereeze-and-modding-dl/actions/workflows/ci.yml/badge.svg)](https://github.com/Nauder/floowandereeze-and-modding-dl/actions/workflows/ci.yml)
-[![Docs](https://github.com/Nauder/floowandereeze-and-modding-dl/actions/workflows/docs.yml/badge.svg)](https://github.com/Nauder/floowandereeze-and-modding-dl/actions/workflows/docs.yml)
+[![CI](https://github.com/mistercricro8/floowandereeze-and-modding-dl/actions/workflows/ci.yml/badge.svg)](https://github.com/mistercricro8/floowandereeze-and-modding-dl/actions/workflows/ci.yml)
+[![Docs](https://github.com/mistercricro8/floowandereeze-and-modding-dl/actions/workflows/docs.yml/badge.svg)](https://github.com/mistercricro8/floowandereeze-and-modding-dl/actions/workflows/docs.yml)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 
 [![Python](https://img.shields.io/badge/python-3.12-blue.svg?logo=python&logoColor=white)](https://www.python.org)
@@ -55,12 +55,12 @@ A modding tool for Yu-Gi-Oh! Duel Links, built with PySide6 (Qt6) for Windows an
 
 ## Installation
 
-For end-user documentation, refer to the [documentation](https://nauder.github.io/floowandereeze-and-modding-dl)
+For end-user documentation, refer to the [documentation](https://mistercricro8.github.io/floowandereeze-and-modding-dl)
 
 1. Clone the repository:
 
     ```bash
-    git clone https://github.com/Nauder/floowandereeze-and-modding-dl.git
+    git clone https://github.com/mistercricro8/floowandereeze-and-modding-dl.git
     cd floowandereeze-and-modding-dl
     ```
 
